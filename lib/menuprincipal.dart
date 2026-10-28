@@ -17,6 +17,7 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
     if (index == 1) Navigator.pushNamed(context, '/colectivos');
     if (index == 2) Navigator.pushNamed(context, '/eventos');
     if (index == 3) Navigator.pushNamed(context, '/lugares');
+    if (index == 4) Navigator.pushNamed(context, '/mapa');
   }
 
   @override
@@ -85,6 +86,15 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
                 imagePath: 'assets/lugaresconocer.jpeg',
                 route: '/lugares',
               ),
+              // Tarjeta 4: Mapa
+_buildCategoryCard(
+  context,
+  title: 'Mapa de la Ciudad',
+  subtitle: 'Rutas, puntos y lugares',
+  imagePath: 'assets/logo2.png',   // usá lo que tengas, o dejá que salte el errorBuilder
+  route: '/mapa',
+),
+const SizedBox(height: 16),
               const SizedBox(height: 20),
 
               // Ubicación inferior detallada
@@ -192,6 +202,7 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
           BottomNavigationBarItem(icon: Icon(Icons.directions_bus_outlined), label: 'Colectivos'),
           BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), label: 'Eventos'),
           BottomNavigationBarItem(icon: Icon(Icons.place_outlined), label: 'Lugares'),
+          BottomNavigationBarItem(icon: Icon(Icons.map_outlined), label: 'Mapa'), 
         ],
       ),
     );

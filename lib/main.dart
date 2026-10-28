@@ -3,6 +3,7 @@ import 'menuprincipal.dart';
 import 'colectivosyrutas.dart';
 import 'eventos.dart';
 import 'lugaresconocer.dart';
+import 'map_screen.dart';  
 
 void main() {
   runApp(const QuePaChaJujuyApp());
@@ -22,13 +23,14 @@ class QuePaChaJujuyApp extends StatelessWidget {
         primaryColor: const Color(0xFFFF7F6C),
         fontFamily: 'sans-serif',
       ),
-      initialRoute: '/',
+      initialRoute: '/mapa',
       routes: {
         '/': (context) => const PantallaBienvenida(),
         '/menu': (context) => const MenuPrincipal(),
         '/colectivos': (context) => const ColectivosY_Rutas(),
         '/eventos': (context) => const EventosScreen(),
         '/lugares': (context) => const LugaresConocerScreen(),
+        '/mapa': (context) => const MapScreen(), 
       },
     );
   }
