@@ -50,42 +50,43 @@ class PantallaBienvenida extends StatelessWidget {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: const [
-                  Text('9:41', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-                  Icon(Icons.wifi, size: 16),
+                  
                 ],
               ),
               
-              // Contenido central (Logo y textos)
+              // Contenido central (Ilustración y textos)
               Column(
                 children: [
-                  // Placeholder para el Logo / Ilustración principal
-                  Container(
-                    height: 180,
-                    width: 180,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1E2235),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: Center(
-                      child: Image.asset(
-                        'assets/logo_principal.png',
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          Icons.landscape,
-                          size: 80,
-                          color: Color(0xFFFF7F6C),
-                        ),
-                      ),
+                  // Ilustración sin recuadro de fondo (asegúrate de que tu imagen sea solo el dibujo)
+                  Image.asset(
+                    'assets/logo.jpeg', // <--- Reemplaza con el nombre de tu archivo de ilustración
+                    height: 240,
+                    fit: BoxFit.contain,
+                    errorBuilder: (context, error, stackTrace) => const Icon(
+                      Icons.landscape,
+                      size: 100,
+                      color: Color(0xFFFF7F6C),
                     ),
                   ),
                   const SizedBox(height: 30),
                   const Text(
-                    '¿Qué Pa Cha\nen Jujuy?',
+                    'Qué Pa Cha',
                     textAlign: TextAlign.center,
                     style: TextStyle(
                       fontSize: 32,
                       fontWeight: FontWeight.bold,
                       height: 1.1,
                       color: Colors.white,
+                    ),
+                  ),
+                  const Text(
+                    'en JUJUY?',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      height: 1.1,
+                      color: Color(0xFFFF7F6C),
                     ),
                   ),
                   const SizedBox(height: 16),

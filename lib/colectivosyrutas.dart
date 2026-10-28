@@ -94,7 +94,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                           onTap: () => setState(() => lineaSeleccionada = 'Urbano'),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: lineaSeleccionada == 'Urbano' ? const Color(0xFFFF7F6C) : Colors.transparent,
+                              color: lineaSeleccionada == 'Urbano' ? const Color.fromARGB(255, 197, 20, 20) : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             alignment: Alignment.center,
@@ -102,7 +102,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                               'Urbano',
                               style: TextStyle(
                                 fontWeight: FontWeight.bold,
-                                color: lineaSeleccionada == 'Urbano' ? const Color(0xFF131622) : Colors.white70,
+                                color: lineaSeleccionada == 'Urbano' ? const Color.fromARGB(255, 255, 255, 255) : Colors.white70,
                               ),
                             ),
                           ),
@@ -113,7 +113,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                           onTap: () => setState(() => lineaSeleccionada = 'Santa Ana'),
                           child: Container(
                             decoration: BoxDecoration(
-                              color: lineaSeleccionada == 'Santa Ana' ? const Color(0xFFFF7F6C) : Colors.transparent,
+                              color: lineaSeleccionada == 'Santa Ana' ? const Color.fromARGB(255, 240, 243, 67) : Colors.transparent,
                               borderRadius: BorderRadius.circular(12),
                             ),
                             alignment: Alignment.center,
