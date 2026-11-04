@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // <-- NUEVO
+import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'map_data.dart';
@@ -71,7 +71,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     }
   }
 
-  // --- NUEVO: Lógica para leer el portapapeles y buscar ---
   Future<void> _pegarYBuscar() async {
     final data = await Clipboard.getData(Clipboard.kTextPlain);
     
@@ -81,13 +80,10 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     }
 
     try {
-      // Esperamos un formato "-24.1234, -65.4321"
       final partes = data.text!.split(',');
       if (partes.length == 2) {
         final lat = double.parse(partes[0].trim());
         final lng = double.parse(partes[1].trim());
-        
-        // Llamamos a tu función existente _analizarDestino
         _analizarDestino(LatLng(lat, lng));
       } else {
         throw FormatException();
@@ -240,7 +236,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
         elevation: 0,
         title: const Text('Colectivos y rutas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
-          // NUEVO: Botón de pegar en la AppBar
           IconButton(
             icon: const Icon(Icons.content_paste, color: Color(0xFFFF7F6C)),
             tooltip: 'Pegar coordenadas de destino',
@@ -307,6 +302,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Container(
               height: 44,
+              // DISEÑO NUEVO DE LA RAMA MAIN (BorderRadius 30)
               decoration: BoxDecoration(color: const Color(0xFF1E2235), borderRadius: BorderRadius.circular(30)),
               child: Row(
                 children: [
@@ -369,17 +365,19 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                           ),
                           child: Row(
                             children: [
+                              // NUEVOS LOGOS DE LA RAMA MAIN
                               Image.asset(
-  ruta.categoriaRuta == 'urbano' 
-      ? 'assets/urbanologo.png' 
-      : 'assets/santa_logo.png',
-  width: 40,
-  height: 40,
-),
-const SizedBox(width: 14),
-Expanded(
-  child: Text(ruta.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
-),
+                                ruta.categoriaRuta == 'urbano' 
+                                    ? 'assets/urbanologo.png' 
+                                    : 'assets/santa_logo.png',
+                                width: 40,
+                                height: 40,
+                                errorBuilder: (context, error, stackTrace) => Icon(Icons.directions_bus, color: ruta.color, size: 24),
+                              ),
+                              const SizedBox(width: 14),
+                              Expanded(
+                                child: Text(ruta.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                              ),
                               if (isSelected) const Icon(Icons.check_circle, color: Color(0xFFFF7F6C), size: 20),
                             ],
                           ),
