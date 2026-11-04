@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 class RegisterScreen extends StatefulWidget {
   const RegisterScreen({super.key});
@@ -17,6 +17,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
   bool _obscurePassword = true;
   bool _obscureConfirmPassword = true;
   bool _termsAccepted = false;
+  bool _cargando = false; // <-- Para mostrar el circulito de carga
 
   @override
   void dispose() {
@@ -33,37 +34,52 @@ class _RegisterScreenState extends State<RegisterScreen> {
     final password = _passwordController.text.trim();
     final confirmPassword = _confirmPasswordController.text.trim();
 
+    // Validaciones visuales
     if (name.isEmpty || email.isEmpty || password.isEmpty || confirmPassword.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Completá todos los campos')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Completá todos los campos')));
       return;
     }
 
     if (password != confirmPassword) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Las contraseñas no coinciden')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Las contraseñas no coinciden')));
+      return;
+    }
+
+    if (password.length < 6) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('La contraseña debe tener al menos 6 caracteres')));
       return;
     }
 
     if (!_termsAccepted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Debes aceptar los términos y condiciones')),
-      );
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Debes aceptar los términos y condiciones')));
       return;
     }
 
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('user_name', name);
-    await prefs.setString('user_email', email);
-    await prefs.setString('user_password', password);
+    setState(() => _cargando = true);
 
-    if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Cuenta creada! Ahora podés iniciar sesión')),
+    try {
+      // LÓGICA DE FIREBASE
+      UserCredential userCredential = await FirebaseAuth.instance.createUserWithEmailAndPassword(
+        email: email,
+        password: password,
       );
-      Navigator.pop(context);
+
+      // Guardamos el nombre en el perfil de Firebase
+      await userCredential.user?.updateDisplayName(name);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Cuenta creada con éxito! Ya podés iniciar sesión.')));
+        Navigator.pop(context);
+      }
+    } on FirebaseAuthException catch (e) {
+      String mensaje = 'Error al registrar';
+      if (e.code == 'weak-password') mensaje = 'La contraseña es muy débil';
+      if (e.code == 'email-already-in-use') mensaje = 'Ese correo ya está registrado';
+      if (e.code == 'invalid-email') mensaje = 'El formato del correo no es válido';
+      
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(mensaje)));
+    } finally {
+      if (mounted) setState(() => _cargando = false);
     }
   }
 
@@ -78,237 +94,229 @@ class _RegisterScreenState extends State<RegisterScreen> {
         iconTheme: const IconThemeData(color: Colors.white),
       ),
       body: SingleChildScrollView(
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Banner superior: Acá podés cambiar fácilmente la imagen de fondo 
-            // (Usá Image.asset('tu/ruta/imagen.png') si preferís tus assets locales)
-            SizedBox(
-              height: 200,
-              width: double.infinity,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  // Imagen de fondo (Modificala por Image.asset si querés usar tus propios archivos)
-                  Image.asset(
-                    'assets/bannercerros.png',
-                  ),
-                  
-                  // Gradiente difuminado para fundir con el color de fondo de la app
-                  Container(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.transparent,
-                          const Color(0xFF131622).withOpacity(0.5),
-                          const Color(0xFF131622),
+        // AutofillGroup para que el celular sugiera correos y contraseñas
+        child: AutofillGroup(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Banner superior
+              SizedBox(
+                height: 200,
+                width: double.infinity,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    Image.asset(
+                      'assets/bannercerros.png',
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        color: const Color(0xFF1E2336),
+                        child: const Center(child: Icon(Icons.image, color: Colors.white24, size: 50)),
+                      ),
+                    ),
+                    // Gradiente difuminado
+                    Container(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.transparent,
+                            const Color(0xFF131622).withOpacity(0.5),
+                            const Color(0xFF131622),
+                          ],
+                        ),
+                      ),
+                    ),
+                    // Textos superpuestos
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: const [
+                          Row(
+                            children: [
+                              Icon(Icons.location_on, color: Colors.white70, size: 14),
+                              SizedBox(width: 4),
+                              Text(
+                                'CERROS 7 COLORES - JUJUY, ARGENTINA',
+                                style: TextStyle(color: Colors.white70, fontSize: 10, letterSpacing: 1),
+                              ),
+                            ],
+                          ),
                         ],
                       ),
                     ),
-                  ),
-
-                  // Textos y ubicación superpuestos en el banner
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.end,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Container(
-                              
-                            ),
-                            const SizedBox(width: 8),
-                            const Text(
-                              '',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 16),
-                            ),
-                          ],
-                        ),
-                        const Text(
-                          '',
-                          style: TextStyle(color: Colors.white, fontSize: 14),
-                        ),
-                        const SizedBox(height: 8),
-                        const Row(
-                          children: [
-                            Icon(Icons.location_on, color: Colors.white70, size: 14),
-                            SizedBox(width: 4),
-                            Text(
-                              'CERROS 7 COLORES - JUJUY, ARGENTINA',
-                              style: TextStyle(color: Colors.white70, fontSize: 10, letterSpacing: 1),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
+                  ],
+                ),
               ),
-            ),
-            
-            // Formulario principal de Registro
-            Padding(
-              padding: const EdgeInsets.all(24.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Jujuy se vive mejor\njuntos.',
-                    style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Creá tu cuenta, guardá tus lugares favoritos y no te pierdas ningún encuentro.',
-                    style: TextStyle(fontSize: 13, color: Colors.white70),
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Campo Nombre y apellido
-                  const Text('Nombre y apellido', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _nameController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: '¿Cómo te llamás?',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                      prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
-                      filled: true,
-                      fillColor: const Color(0xFF1E2336),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+              
+              // Formulario principal
+              Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Jujuy se vive mejor\njuntos.',
+                      style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white, height: 1.2),
                     ),
-                  ),
-                  const SizedBox(height: 16),
-
-                  // Campo Email
-                  const Text('Email', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _emailController,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Tu email',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                      prefixIcon: const Icon(Icons.mail_outline, color: Colors.white54),
-                      filled: true,
-                      fillColor: const Color(0xFF1E2336),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Creá tu cuenta, guardá tus lugares favoritos y no te pierdas ningún encuentro.',
+                      style: TextStyle(fontSize: 13, color: Colors.white70),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 24),
 
-                  // Campo Contraseña
-                  const Text('Contraseña', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _passwordController,
-                    obscureText: _obscurePassword,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Creá una contraseña',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white54),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
-                        onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
+                    // Campo Nombre
+                    const Text('Nombre y apellido', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _nameController,
+                      style: const TextStyle(color: Colors.white),
+                      autofillHints: const [AutofillHints.name],
+                      decoration: InputDecoration(
+                        hintText: '¿Cómo te llamás?',
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                        prefixIcon: const Icon(Icons.person_outline, color: Colors.white54),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2336),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       ),
-                      filled: true,
-                      fillColor: const Color(0xFF1E2336),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                  ),
-                  const SizedBox(height: 4),
-                  const Text('Usá al menos 8 caracteres, una letra y un número.', style: TextStyle(color: Colors.white38, fontSize: 11)),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Campo Confirmar Contraseña
-                  const Text('Confirmar contraseña', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _confirmPasswordController,
-                    obscureText: _obscureConfirmPassword,
-                    style: const TextStyle(color: Colors.white),
-                    decoration: InputDecoration(
-                      hintText: 'Repetí tu contraseña',
-                      hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
-                      prefixIcon: const Icon(Icons.lock_outline, color: Colors.white54),
-                      suffixIcon: IconButton(
-                        icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
-                        onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                    // Campo Email
+                    const Text('Email', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _emailController,
+                      style: const TextStyle(color: Colors.white),
+                      keyboardType: TextInputType.emailAddress,
+                      autofillHints: const [AutofillHints.email],
+                      decoration: InputDecoration(
+                        hintText: 'Tu email',
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                        prefixIcon: const Icon(Icons.mail_outline, color: Colors.white54),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2336),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       ),
-                      filled: true,
-                      fillColor: const Color(0xFF1E2336),
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                     ),
-                  ),
-                  const SizedBox(height: 16),
+                    const SizedBox(height: 16),
 
-                  // Términos y condiciones
-                  Row(
-                    children: [
-                      Checkbox(
-                        value: _termsAccepted,
-                        activeColor: const Color(0xFFFF7F6C),
-                        checkColor: const Color(0xFF131622),
-                        onChanged: (val) => setState(() => _termsAccepted = val ?? false),
-                      ),
-                      const Expanded(
-                        child: Text(
-                          'Acepto los Términos y condiciones y la Política de privacidad.',
-                          style: TextStyle(color: Colors.white70, fontSize: 12),
+                    // Campo Contraseña
+                    const Text('Contraseña', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _passwordController,
+                      obscureText: _obscurePassword,
+                      style: const TextStyle(color: Colors.white),
+                      autofillHints: const [AutofillHints.newPassword],
+                      decoration: InputDecoration(
+                        hintText: 'Creá una contraseña',
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Colors.white54),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                          onPressed: () => setState(() => _obscurePassword = !_obscurePassword),
                         ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 24),
-
-                  // Botón Crear cuenta
-                  SizedBox(
-                    width: double.infinity,
-                    height: 52,
-                    child: ElevatedButton(
-                      onPressed: _registrarse,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFFF7F6C),
-                        foregroundColor: const Color(0xFF131622),
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                      ),
-                      child: const Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Text('Crear mi cuenta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                          SizedBox(width: 8),
-                          Icon(Icons.arrow_forward, size: 18),
-                        ],
+                        filled: true,
+                        fillColor: const Color(0xFF1E2336),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
                       ),
                     ),
-                  ),
-                  const SizedBox(height: 20),
+                    const SizedBox(height: 4),
+                    const Text('Usá al menos 6 caracteres.', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                    const SizedBox(height: 16),
 
-                  // Pie de página (Ir a Iniciar sesión)
-                  Center(
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
+                    // Campo Confirmar Contraseña
+                    const Text('Confirmar contraseña', style: TextStyle(color: Colors.white, fontSize: 13, fontWeight: FontWeight.w500)),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: _confirmPasswordController,
+                      obscureText: _obscureConfirmPassword,
+                      style: const TextStyle(color: Colors.white),
+                      decoration: InputDecoration(
+                        hintText: 'Repetí tu contraseña',
+                        hintStyle: const TextStyle(color: Colors.white38, fontSize: 14),
+                        prefixIcon: const Icon(Icons.lock_outline, color: Colors.white54),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscureConfirmPassword ? Icons.visibility_off : Icons.visibility, color: Colors.white54),
+                          onPressed: () => setState(() => _obscureConfirmPassword = !_obscureConfirmPassword),
+                        ),
+                        filled: true,
+                        fillColor: const Color(0xFF1E2336),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Términos y condiciones
+                    Row(
                       children: [
-                        const Text('¿Ya tenés cuenta? ', style: TextStyle(color: Colors.white70, fontSize: 13)),
-                        GestureDetector(
-                          onTap: () => Navigator.pop(context),
-                          child: const Text(
-                            'Iniciá sesión',
-                            style: TextStyle(color: Color(0xFFFF7F6C), fontWeight: FontWeight.bold, fontSize: 13),
+                        Checkbox(
+                          value: _termsAccepted,
+                          activeColor: const Color(0xFFFF7F6C),
+                          checkColor: const Color(0xFF131622),
+                          onChanged: (val) => setState(() => _termsAccepted = val ?? false),
+                        ),
+                        const Expanded(
+                          child: Text(
+                            'Acepto los Términos y condiciones y la Política de privacidad.',
+                            style: TextStyle(color: Colors.white70, fontSize: 12),
                           ),
                         ),
                       ],
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 24),
+
+                    // Botón Crear cuenta
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _cargando ? null : _registrarse,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF7F6C),
+                          foregroundColor: const Color(0xFF131622),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        child: _cargando 
+                          ? const CircularProgressIndicator(color: Color(0xFF131622))
+                          : const Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Crear mi cuenta', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                SizedBox(width: 8),
+                                Icon(Icons.arrow_forward, size: 18),
+                              ],
+                            ),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+
+                    // Pie de página (Ir a Iniciar sesión)
+                    Center(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          const Text('¿Ya tenés cuenta? ', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                          GestureDetector(
+                            onTap: () => Navigator.pop(context),
+                            child: const Text(
+                              'Iniciá sesión',
+                              style: TextStyle(color: Color(0xFFFF7F6C), fontWeight: FontWeight.bold, fontSize: 13),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
