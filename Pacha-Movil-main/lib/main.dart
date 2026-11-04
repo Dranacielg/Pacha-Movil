@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // <-- Importante para la lógica
 import 'firebase_options.dart';
 import 'menuprincipal.dart';
 import 'colectivosyrutas.dart';
@@ -43,14 +45,47 @@ class QuePaChaJujuyApp extends StatelessWidget {
         '/colectivos': (context) => const ColectivosY_Rutas(),
         '/eventos': (context) => const EventosScreen(),
         '/lugares': (context) => const LugaresConocerScreen(),
-        '/mapa': (context) => MapScreen(), // <-- Sin el 'const' para evitar problemas
+        '/mapa': (context) => MapScreen(), 
       },
     );
   }
 }
 
-class PantallaBienvenida extends StatelessWidget {
+// --- SPLASH SCREEN CON LÓGICA DE FIREBASE Y DISEÑO NUEVO ---
+class PantallaBienvenida extends StatefulWidget {
   const PantallaBienvenida({super.key});
+
+  @override
+  State<PantallaBienvenida> createState() => _PantallaBienvenidaState();
+}
+
+class _PantallaBienvenidaState extends State<PantallaBienvenida> {
+  @override
+  void initState() {
+    super.initState();
+    _verificarSesion();
+  }
+
+  Future<void> _verificarSesion() async {
+    // Esperamos 2 segundos para que el usuario vea el logo
+    await Future.delayed(const Duration(seconds: 2));
+
+    if (!mounted) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    
+    if (user != null) {
+      // Si ya está logueado, salta el login
+      if (user.email == 'admin@pacha.com') { 
+        Navigator.pushReplacementNamed(context, '/mapa');
+      } else {
+        Navigator.pushReplacementNamed(context, '/menu');
+      }
+    } else {
+      // Si no hay sesión, va al login
+      Navigator.pushReplacementNamed(context, '/login');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -62,10 +97,11 @@ class PantallaBienvenida extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: const []),
+              
               Column(
                 children: [
                   Image.asset(
-                    'assets/icono_nuevo_menu.png',
+                    'assets/icono_nuevo_menu.png', // <-- Mantenemos la imagen nueva de ellos
                     height: 240,
                     fit: BoxFit.contain,
                     errorBuilder: (context, error, stackTrace) => const Icon(Icons.landscape, size: 100, color: Color(0xFFFF7F6C)),
@@ -77,12 +113,14 @@ class PantallaBienvenida extends StatelessWidget {
                   const Text('La ciudad, sus encuentros y esos\nlugares que son nuestros.', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: Colors.white60, height: 1.4)),
                 ],
               ),
+              
               Column(
                 children: [
                   SizedBox(
                     width: double.infinity,
                     height: 54,
                     child: ElevatedButton(
+                      // Mantenemos el botón de ellos, pero que vaya al login
                       onPressed: () => Navigator.pushReplacementNamed(context, '/login'),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFFFF7F6C),
