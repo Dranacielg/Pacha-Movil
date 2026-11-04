@@ -1,0 +1,58 @@
+name: definitiva
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.13.7
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.8
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  geolocator: ^13.0.1
+  flutter_map_location_marker: ^9.1.0
+  flutter_map_cache: ^1.5.2
+  dio: ^5.4.0
+  dio_cache_interceptor_file_store: ^1.2.2
+  path_provider: ^2.1.5
+  shared_preferences: ^2.2.2
+  firebase_core: ^5.1.0
+  cloud_firestore: ^7.1.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  flutter_launcher_icons: ^0.13.1
+  flutter_native_splash: ^2.4.0
+
+flutter:
+  uses-material-design: true
+
+  assets:
+    - assets/
+
+# Configuración del ícono de la app
+flutter_launcher_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/icon/icono_escritorio.png"
+  min_sdk_android: 21
+
+
+# Configuración del Splash Screen apuntando a la imagen con espacio de respiro
+flutter_native_splash:
+  color: "#232844"
+  image: "assets/icon/logo_splashHD.png" # <--- Usamos la nueva imagen con margen
+
+  android_12:
+    color: "#232844"
+    image: "assets/icon/logo_splashHD.png" # <--- Acá también
+    icon_background_color: "#232844"
+
+  ios: true
+  android: true

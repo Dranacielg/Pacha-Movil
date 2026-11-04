@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "670450985881",
+    "project_id": "pachamovil",
+    "storage_bucket": "pachamovil.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:670450985881:android:81adad61a89346ab5ec108",
+        "android_client_info": {
+          "package_name": "com.example.definitiva"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCfW5pljFEUl-AhmVGWZa3aETwe-JbWbhE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
