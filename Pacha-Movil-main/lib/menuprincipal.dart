@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart'; // <-- Necesario para el botón de salir
 
 class MenuPrincipal extends StatefulWidget {
   const MenuPrincipal({super.key});
@@ -42,7 +43,26 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
                       ),
                     ],
                   ),
-                  const Icon(Icons.tune, size: 20, color: Colors.white70),
+                  // BOTONES DE LA DERECHA (Ajustes y Salir)
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.tune, size: 20, color: Colors.white70),
+                      const SizedBox(width: 15),
+                      IconButton(
+                        icon: const Icon(Icons.logout, size: 20, color: Color(0xFFFF7F6C)),
+                        tooltip: 'Cerrar Sesión',
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(), // Para que no ocupe mucho espacio
+                        onPressed: () async {
+                          await FirebaseAuth.instance.signOut();
+                          if (context.mounted) {
+                            Navigator.pushReplacementNamed(context, '/login');
+                          }
+                        },
+                      ),
+                    ],
+                  ),
                 ],
               ),
               const SizedBox(height: 16),
