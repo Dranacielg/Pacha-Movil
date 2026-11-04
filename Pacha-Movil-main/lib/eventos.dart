@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // <-- NUEVO: Para el portapapeles
+import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
+
 import 'map_data.dart';
 import 'map_storage.dart';
 import 'widgets/ruta_map.dart';
+import 'utils/map_launcher.dart'; // <-- Necesario para el botón de Cómo llegar
 
 class EventosScreen extends StatefulWidget {
   const EventosScreen({super.key});
@@ -30,7 +32,21 @@ class _EventosScreenState extends State<EventosScreen> {
       if (mounted) {
         setState(() {
           _todosLosPuntos = data;
-          _soloEventos = data.where((p) => p.categoria == 'evento').toList();
+          final ahora = DateTime.now().millisecondsSinceEpoch;
+
+          // Lógica de tu rama: filtrar eventos pasados y ordenarlos por fecha
+          _soloEventos = data.where((p) {
+            if (p.categoria != 'evento') return false;
+            if (p.fechaFin == null) return true; 
+            return p.fechaFin! >= ahora; 
+          }).toList();
+
+          _soloEventos.sort((a, b) {
+            if (a.fechaInicio == null) return 1;
+            if (b.fechaInicio == null) return -1;
+            return a.fechaInicio!.compareTo(b.fechaInicio!);
+          });
+
           if (_eventoSeleccionado != null && !_soloEventos.any((e) => e.id == _eventoSeleccionado!.id)) {
             _eventoSeleccionado = null;
           }
@@ -45,7 +61,7 @@ class _EventosScreenState extends State<EventosScreen> {
     super.dispose();
   }
 
-  // Función para copiar al portapapeles
+  // Función para copiar al portapapeles (tu lógica)
   void _copiarCoordenadas(PuntoInteres evento) {
     Clipboard.setData(ClipboardData(text: '${evento.lat}, ${evento.lng}'));
     ScaffoldMessenger.of(context).showSnackBar(
@@ -54,6 +70,25 @@ class _EventosScreenState extends State<EventosScreen> {
         duration: Duration(seconds: 3),
       ),
     );
+  }
+
+  // Formatear fecha (tu lógica)
+  String _formatearFecha(int? timestamp) {
+    if (timestamp == null) return 'Fecha a confirmar';
+    final fecha = DateTime.fromMillisecondsSinceEpoch(timestamp);
+    final ahora = DateTime.now();
+    
+    String diaStr = '';
+    if (fecha.day == ahora.day && fecha.month == ahora.month && fecha.year == ahora.year) {
+      diaStr = 'Hoy';
+    } else if (fecha.day == ahora.add(const Duration(days: 1)).day && fecha.month == ahora.month) {
+      diaStr = 'Mañana';
+    } else {
+      diaStr = '${fecha.day}/${fecha.month}';
+    }
+
+    final hora = '${fecha.hour.toString().padLeft(2, '0')}:${fecha.minute.toString().padLeft(2, '0')}';
+    return '$diaStr a las $hora hs';
   }
 
   @override
@@ -127,8 +162,9 @@ class _EventosScreenState extends State<EventosScreen> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('EVENTOS DISPONIBLES', style: TextStyle(fontSize: 10, color: Colors.white38, fontWeight: FontWeight.bold)),
-                Text('${_soloEventos.length} encontrados', style: const TextStyle(fontSize: 12, color: Color(0xFFFF7F6C), fontWeight: FontWeight.bold)),
+                // Título cambiado para reflejar la lógica de fechas
+                const Text('PRÓXIMOS EVENTOS', style: TextStyle(fontSize: 10, color: Colors.white38, fontWeight: FontWeight.bold)),
+                Text('${_soloEventos.length} programados', style: const TextStyle(fontSize: 12, color: Color(0xFFFF7F6C), fontWeight: FontWeight.bold)),
               ],
             ),
           ),
@@ -136,7 +172,7 @@ class _EventosScreenState extends State<EventosScreen> {
 
           Expanded(
             child: _soloEventos.isEmpty
-                ? const Center(child: Text('No hay eventos creados aún', style: TextStyle(color: Colors.white38)))
+                ? const Center(child: Text('No hay eventos próximos', style: TextStyle(color: Colors.white38)))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: _soloEventos.length,
@@ -173,50 +209,88 @@ class _EventosScreenState extends State<EventosScreen> {
           borderRadius: BorderRadius.circular(14),
           border: Border.all(color: isSelected ? const Color(0xFFFF7F6C) : Colors.white10),
         ),
-        child: Row(
+        child: Column( // Usamos Column para acomodar los botones abajo
           children: [
-            Container(
-              width: 48,
-              height: 52,
-              decoration: BoxDecoration(
-                color: const Color(0xFF2E334D),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Icon(evento.icono, color: evento.color, size: 24),
-            ),
-            const SizedBox(width: 14),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    isSelected ? 'TOCÁ DE NUEVO PARA IR' : 'EVENTO', 
-                    style: TextStyle(fontSize: 9, color: isSelected ? Colors.greenAccent : const Color(0xFFFF7F6C), fontWeight: FontWeight.bold)
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Container(
+                  width: 48,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF2E334D),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  const SizedBox(height: 2),
-                  Text(evento.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
-                  const SizedBox(height: 4),
-                  Text(
-                    '${evento.lat.toStringAsFixed(4)}, ${evento.lng.toStringAsFixed(4)}',
-                    style: const TextStyle(fontSize: 11, color: Colors.white54),
+                  child: Icon(evento.icono, color: evento.color, size: 24),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isSelected ? 'TOCÁ DE NUEVO PARA IR' : 'EVENTO', 
+                        style: TextStyle(fontSize: 9, color: isSelected ? Colors.greenAccent : const Color(0xFFFF7F6C), fontWeight: FontWeight.bold)
+                      ),
+                      const SizedBox(height: 2),
+                      Text(evento.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                      
+                      const SizedBox(height: 4),
+                      // Etiqueta de fecha formateada
+                      Row(
+                        children: [
+                          const Icon(Icons.calendar_month, size: 12, color: Colors.amber),
+                          const SizedBox(width: 4),
+                          Text(
+                            _formatearFecha(evento.fechaInicio),
+                            style: const TextStyle(fontSize: 11, color: Colors.amber, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+
+                      // Descripción del evento
+                      if (evento.descripcion.isNotEmpty) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          evento.descripcion,
+                          style: const TextStyle(fontSize: 11, color: Colors.white70),
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ],
                   ),
-                ],
-              ),
+                ),
+                Icon(isSelected ? Icons.my_location : Icons.touch_app, size: 18, color: isSelected ? Colors.greenAccent : Colors.white38),
+              ],
             ),
             
-            // BOTÓN DE COPIAR (Solo aparece si el evento está seleccionado)
-            if (isSelected)
-              IconButton(
-                icon: const Icon(Icons.copy, color: Colors.blueAccent),
-                tooltip: 'Copiar coordenadas',
-                onPressed: () => _copiarCoordenadas(evento),
-              ),
-
-            Icon(
-              isSelected ? Icons.my_location : Icons.touch_app, 
-              size: 18, 
-              color: isSelected ? Colors.greenAccent : Colors.white38
-            ),
+            // BOTONES (Solo aparecen si el evento está seleccionado)
+            if (isSelected) ...[
+              const Divider(color: Colors.white12, height: 20),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  TextButton.icon(
+                    onPressed: () => _copiarCoordenadas(evento),
+                    icon: const Icon(Icons.copy, size: 16, color: Colors.blueAccent),
+                    label: const Text('Copiar', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
+                  ),
+                  TextButton.icon(
+                    onPressed: () {
+                      MapLauncher.showAppChooser(
+                        context: context,
+                        lat: evento.lat,
+                        lng: evento.lng,
+                        nombreLugar: evento.nombre,
+                      );
+                    },
+                    icon: const Icon(Icons.directions, size: 16, color: Colors.greenAccent),
+                    label: const Text('Cómo llegar', style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
+                  ),
+                ],
+              )
+            ]
           ],
         ),
       ),
