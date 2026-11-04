@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'map_data.dart';
 import 'map_storage.dart';
@@ -17,7 +18,6 @@ class _MapScreenState extends State<MapScreen> {
   final GlobalKey<RutaMapState> _mapKey = GlobalKey<RutaMapState>();
   final MapStorage _storage = MapStorage();
 
-  // Variables de estado para los datos
   List<PuntoInteres> _puntos = [];
   List<RutaColectivo> _rutas = [];
   StreamSubscription? _subPuntos;
@@ -26,7 +26,6 @@ class _MapScreenState extends State<MapScreen> {
   bool _mostrarRutas = true; 
   bool _mostrarLugares = true; 
   bool _mostrarEventos = true; 
-  bool _mostrarColectivos = true; 
 
   bool _modoAgregarPunto = false;
   bool _modoAgregarRuta = false;
@@ -38,7 +37,6 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
-    // Escuchamos los cambios de la nube y actualizamos el estado
     _subPuntos = _storage.streamPuntos().listen((data) {
       if (mounted) setState(() => _puntos = data);
     });
@@ -57,74 +55,7 @@ class _MapScreenState extends State<MapScreen> {
   void _alTocarMapa(LatLng punto) async {
     if (_modoAgregarPunto) {
       setState(() => _modoAgregarPunto = false);
-      
-      final TextEditingController controller = TextEditingController();
-      String categoriaSeleccionada = 'lugar'; 
-
-      final resultado = await showDialog<String>(
-        context: context,
-        builder: (context) {
-          return StatefulBuilder(
-            builder: (context, setDialogState) {
-              return AlertDialog(
-                title: const Text('Nuevo Punto'),
-                content: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    TextField(controller: controller, decoration: const InputDecoration(labelText: 'Nombre del lugar'), autofocus: true),
-                    const SizedBox(height: 15),
-                    DropdownButtonFormField<String>(
-                      value: categoriaSeleccionada,
-                      decoration: const InputDecoration(labelText: 'Categoría'),
-                      items: const [
-                        DropdownMenuItem(value: 'lugar', child: Text('Lugar (Restaurante, Cine...)')),
-                        DropdownMenuItem(value: 'evento', child: Text('Evento (Fiesta, Recital...)')),
-                        DropdownMenuItem(value: 'colectivo', child: Text('Parada de Colectivo')),
-                      ],
-                      onChanged: (val) {
-                        setDialogState(() { categoriaSeleccionada = val!; });
-                      },
-                    ),
-                  ],
-                ),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-                  ElevatedButton(onPressed: () => Navigator.pop(context, controller.text), child: const Text('Guardar')),
-                ],
-              );
-            }
-          );
-        },
-      );
-
-      if (resultado != null && resultado.isNotEmpty) {
-        IconData iconoFinal;
-        Color colorFinal;
-
-        if (categoriaSeleccionada == 'evento') {
-          iconoFinal = Icons.event;
-          colorFinal = Colors.pinkAccent;
-        } else if (categoriaSeleccionada == 'colectivo') {
-          iconoFinal = Icons.directions_bus;
-          colorFinal = Colors.greenAccent;
-        } else {
-          iconoFinal = Icons.place;
-          colorFinal = Colors.blueAccent;
-        }
-
-        final nuevoPunto = PuntoInteres(
-          id: '', 
-          nombre: resultado, 
-          lat: punto.latitude, 
-          lng: punto.longitude,
-          iconoCode: iconoFinal.codePoint, 
-          colorValue: colorFinal.value,
-          categoria: categoriaSeleccionada, 
-        );
-        
-        await _storage.guardarPunto(nuevoPunto); 
-        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Punto guardado en la nube')));
-      }
+      _mostrarFormularioCreacion(punto);
     }
     else if (_modoAgregarRuta) {
       setState(() { 
@@ -134,6 +65,280 @@ class _MapScreenState extends State<MapScreen> {
         }
       });
     }
+  }
+
+  // --- FORMULARIO AVANZADO ---
+  void _mostrarFormularioCreacion(LatLng punto) {
+    final nombreCtrl = TextEditingController();
+    final descCtrl = TextEditingController();
+    
+    String categoriaPrincipal = 'lugar'; 
+    String subcategoriaLugar = 'gastronomia';
+    List<HorarioAtencion> horariosTemporales = [];
+    
+    DateTime? fechaInicioEvento;
+    DateTime? fechaFinEvento;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF161925),
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+                left: 20, right: 20, top: 20
+              ),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text('Nuevo Punto en el Mapa', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+                    const SizedBox(height: 15),
+                    
+                    TextField(controller: nombreCtrl, decoration: const InputDecoration(labelText: 'Nombre'), style: const TextStyle(color: Colors.white)),
+                    const SizedBox(height: 10),
+                    TextField(controller: descCtrl, decoration: const InputDecoration(labelText: 'Descripción breve'), maxLines: 2, style: const TextStyle(color: Colors.white)),
+                    const SizedBox(height: 15),
+                    
+                    DropdownButtonFormField<String>(
+                      value: categoriaPrincipal,
+                      dropdownColor: const Color(0xFF1E2235),
+                      style: const TextStyle(color: Colors.white),
+                      decoration: const InputDecoration(labelText: 'Categoría Principal'),
+                      items: const [
+                        DropdownMenuItem(value: 'lugar', child: Text('Lugar')),
+                        DropdownMenuItem(value: 'evento', child: Text('Evento')),
+                      ],
+                      onChanged: (val) => setModalState(() => categoriaPrincipal = val!),
+                    ),
+                    
+                    // SECCIÓN DE LUGAR
+                    if (categoriaPrincipal == 'lugar') ...[
+                      const SizedBox(height: 15),
+                      DropdownButtonFormField<String>(
+                        value: subcategoriaLugar,
+                        dropdownColor: const Color(0xFF1E2235),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(labelText: 'Tipo de Lugar'),
+                        items: const [
+                          DropdownMenuItem(value: 'gastronomia', child: Text('Gastronomía (Comida/Bebida)')),
+                          DropdownMenuItem(value: 'recreacion', child: Text('Recreación (Plazas/Parques)')),
+                          DropdownMenuItem(value: 'deportes', child: Text('Deportes (Piscinas/Canchas)')),
+                          DropdownMenuItem(value: 'cultura', child: Text('Cultura (Cines/Teatros)')),
+                          DropdownMenuItem(value: 'compras', child: Text('Compras (Shoppings/Ferias)')),
+                        ],
+                        onChanged: (val) => setModalState(() => subcategoriaLugar = val!),
+                      ),
+                      
+                      const SizedBox(height: 20),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          const Text('Horarios de Atención', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                          TextButton.icon(
+                            onPressed: () async {
+                              final nuevoHorario = await _agregarHorario(context);
+                              if (nuevoHorario != null) setModalState(() => horariosTemporales.add(nuevoHorario));
+                            },
+                            icon: const Icon(Icons.add, color: Color(0xFFFF7F6C), size: 18),
+                            label: const Text('Agregar', style: TextStyle(color: Color(0xFFFF7F6C))),
+                          )
+                        ],
+                      ),
+                      
+                      if (horariosTemporales.isEmpty)
+                        const Text('No hay horarios cargados.', style: TextStyle(color: Colors.white38, fontSize: 12)),
+                      ...horariosTemporales.map((h) {
+                        return ListTile(
+                          contentPadding: EdgeInsets.zero,
+                          leading: const Icon(Icons.access_time, color: Colors.white54, size: 20),
+                          title: Text('${h.dia}: ${h.apertura} a ${h.cierre}', style: const TextStyle(color: Colors.white, fontSize: 13)),
+                          trailing: IconButton(
+                            icon: const Icon(Icons.delete, color: Colors.redAccent, size: 18),
+                            onPressed: () => setModalState(() => horariosTemporales.remove(h)),
+                          ),
+                        );
+                      }).toList(),
+                    ],
+
+                    // SECCIÓN DE EVENTO (FECHAS)
+                    if (categoriaPrincipal == 'evento') ...[
+                      const SizedBox(height: 20),
+                      const Text('Fecha y Hora del Evento', style: TextStyle(color: Colors.white70, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                                if (date != null) {
+                                  if (!context.mounted) return;
+                                  final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                                  if (time != null) {
+                                    setModalState(() => fechaInicioEvento = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_today, size: 16),
+                              label: Text(fechaInicioEvento == null ? 'Inicio' : '${fechaInicioEvento!.day}/${fechaInicioEvento!.month} ${fechaInicioEvento!.hour}:${fechaInicioEvento!.minute.toString().padLeft(2,'0')}'),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E334D)),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                final date = await showDatePicker(context: context, initialDate: DateTime.now(), firstDate: DateTime.now(), lastDate: DateTime.now().add(const Duration(days: 365)));
+                                if (date != null) {
+                                  if (!context.mounted) return;
+                                  final time = await showTimePicker(context: context, initialTime: TimeOfDay.now());
+                                  if (time != null) {
+                                    setModalState(() => fechaFinEvento = DateTime(date.year, date.month, date.day, time.hour, time.minute));
+                                  }
+                                }
+                              },
+                              icon: const Icon(Icons.calendar_today, size: 16),
+                              label: Text(fechaFinEvento == null ? 'Fin' : '${fechaFinEvento!.day}/${fechaFinEvento!.month} ${fechaFinEvento!.hour}:${fechaFinEvento!.minute.toString().padLeft(2,'0')}'),
+                              style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2E334D)),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+
+                    const SizedBox(height: 25),
+                    
+                    SizedBox(
+                      width: double.infinity,
+                      height: 50,
+                      child: ElevatedButton(
+                        onPressed: () async {
+                          if (nombreCtrl.text.isEmpty) return;
+                          Navigator.pop(context);
+                          
+                          IconData iconoFinal;
+                          Color colorFinal;
+                          if (categoriaPrincipal == 'evento') {
+                            iconoFinal = Icons.event; colorFinal = Colors.pinkAccent;
+                          } else {
+                            iconoFinal = Icons.place; colorFinal = Colors.blueAccent;
+                          }
+
+                          final nuevoPunto = PuntoInteres(
+                            id: '', 
+                            nombre: nombreCtrl.text, 
+                            descripcion: descCtrl.text,
+                            lat: punto.latitude, 
+                            lng: punto.longitude,
+                            iconoCode: iconoFinal.codePoint, 
+                            colorValue: colorFinal.value,
+                            categoria: categoriaPrincipal, 
+                            categoriaLugar: categoriaPrincipal == 'lugar' ? subcategoriaLugar : '',
+                            horarios: horariosTemporales,
+                            fechaInicio: fechaInicioEvento?.millisecondsSinceEpoch,
+                            fechaFin: fechaFinEvento?.millisecondsSinceEpoch,
+                          );
+                          
+                          await _storage.guardarPunto(nuevoPunto); 
+                          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Guardado en la nube')));
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: const Color(0xFFFF7F6C), 
+                          foregroundColor: const Color(0xFF131622),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))
+                        ),
+                        child: const Text('GUARDAR EN EL MAPA', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ),
+                    ),
+                    const SizedBox(height: 20),
+                  ],
+                ),
+              ),
+            );
+          }
+        );
+      },
+    );
+  }
+
+  // --- VENTANA PARA ELEGIR UN HORARIO ---
+  Future<HorarioAtencion?> _agregarHorario(BuildContext context) async {
+    String diaSeleccionado = 'Lunes';
+    TimeOfDay? horaApertura;
+    TimeOfDay? horaCierre;
+
+    return showDialog<HorarioAtencion>(
+      context: context,
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              backgroundColor: const Color(0xFF1E2235),
+              title: const Text('Nuevo Horario', style: TextStyle(color: Colors.white)),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  DropdownButtonFormField<String>(
+                    value: diaSeleccionado,
+                    dropdownColor: const Color(0xFF161925),
+                    style: const TextStyle(color: Colors.white),
+                    decoration: const InputDecoration(labelText: 'Día'),
+                    items: ['Lunes','Martes','Miércoles','Jueves','Viernes','Sábado','Domingo'].map((d) {
+                      return DropdownMenuItem(value: d, child: Text(d));
+                    }).toList(),
+                    onChanged: (val) => setDialogState(() => diaSeleccionado = val!),
+                  ),
+                  const SizedBox(height: 15),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () async {
+                            final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 8, minute: 0));
+                            if (time != null) setDialogState(() => horaApertura = time);
+                          },
+                          child: Text(horaApertura == null ? 'Apertura' : 'Abre: ${horaApertura!.format(context)}', style: const TextStyle(color: Colors.greenAccent)),
+                        ),
+                      ),
+                      Expanded(
+                        child: TextButton(
+                          onPressed: () async {
+                            final time = await showTimePicker(context: context, initialTime: const TimeOfDay(hour: 20, minute: 0));
+                            if (time != null) setDialogState(() => horaCierre = time);
+                          },
+                          child: Text(horaCierre == null ? 'Cierre' : 'Cierra: ${horaCierre!.format(context)}', style: const TextStyle(color: Colors.redAccent)),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
+                ElevatedButton(
+                  onPressed: () {
+                    if (horaApertura != null && horaCierre != null) {
+                      Navigator.pop(context, HorarioAtencion(
+                        dia: diaSeleccionado,
+                        apertura: horaApertura!.format(context),
+                        cierre: horaCierre!.format(context),
+                      ));
+                    }
+                  },
+                  child: const Text('Aceptar'),
+                ),
+              ],
+            );
+          }
+        );
+      }
+    );
   }
 
   void _guardarRutaEnProgreso() async {
@@ -285,20 +490,37 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
+  // --- DISEÑO MAPA PROTAGONISTA ---
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Laboratorio de Mapas'), backgroundColor: const Color(0xFF161925), foregroundColor: Colors.white),
-      body: Column(
+      extendBodyBehindAppBar: true, 
+      appBar: AppBar(
+        title: const Text('Mapa', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        foregroundColor: Colors.white,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.logout, color: Colors.white70),
+            tooltip: 'Cerrar Sesión',
+            onPressed: () async {
+              await FirebaseAuth.instance.signOut();
+              if (context.mounted) Navigator.pushReplacementNamed(context, '/login');
+            },
+          ),
+        ],
+      ),
+      body: Stack(
         children: [
-          Expanded(
-            flex: 1,
+          // 1. MAPA A PANTALLA COMPLETA
+          Positioned.fill(
             child: RutaMap(
               key: _mapKey,
               mostrarRutas: _mostrarRutas,
               mostrarLugares: _mostrarLugares,
               mostrarEventos: _mostrarEventos,
-              mostrarColectivos: _mostrarColectivos,
+              mostrarColectivos: false, 
               puntos: _puntos,
               rutas: _rutas,
               modoAgregarPunto: _modoAgregarPunto,
@@ -307,95 +529,165 @@ class _MapScreenState extends State<MapScreen> {
               onMapTap: _alTocarMapa,
             ),
           ),
-          Expanded(
-            flex: 1,
-            child: Container(
-              width: double.infinity,
-              color: const Color(0xFF131622),
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.all(20.0),
-                child: Column(
-                  children: [
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      alignment: WrapAlignment.center,
-                      children: [
-                        _buildSwitchChip('Rutas', _mostrarRutas, (v) => setState(() => _mostrarRutas = v)),
-                        _buildSwitchChip('Lugares', _mostrarLugares, (v) => setState(() => _mostrarLugares = v)),
-                        _buildSwitchChip('Eventos', _mostrarEventos, (v) => setState(() => _mostrarEventos = v)),
-                        _buildSwitchChip('Colectivos', _mostrarColectivos, (v) => setState(() => _mostrarColectivos = v)),
-                      ],
-                    ),
-                    const Divider(color: Colors.white24),
 
-                    ElevatedButton.icon(
-                      onPressed: _abrirGestionGuardados,
-                      icon: const Icon(Icons.list),
-                      label: const Text('Gestionar Guardados (Borrar/Ver)'),
-                      style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[800], foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
+          // 2. FILTROS FLOTANTES
+          Positioned(
+            top: MediaQuery.of(context).padding.top + kToolbarHeight,
+            left: 0,
+            right: 0,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Row(
+                children: [
+                  _buildFloatingChip('Rutas', _mostrarRutas, (v) => setState(() => _mostrarRutas = v)),
+                  const SizedBox(width: 8),
+                  _buildFloatingChip('Lugares', _mostrarLugares, (v) => setState(() => _mostrarLugares = v)),
+                  const SizedBox(width: 8),
+                  _buildFloatingChip('Eventos', _mostrarEventos, (v) => setState(() => _mostrarEventos = v)),
+                ],
+              ),
+            ),
+          ),
+
+          // 3. BOTONES FLOTANTES
+          Positioned(
+            right: 16,
+            bottom: _modoAgregarRuta ? 180 : 30, 
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildActionButton(
+                  icon: Icons.list,
+                  tooltip: 'Gestionar Guardados',
+                  color: Colors.grey[800]!,
+                  onPressed: _abrirGestionGuardados,
+                ),
+                const SizedBox(height: 12),
+                _buildActionButton(
+                  icon: Icons.alt_route,
+                  tooltip: 'Trazar Ruta',
+                  color: _modoAgregarRuta ? Colors.orange : Colors.teal,
+                  onPressed: () {
+                    setState(() {
+                      _modoAgregarRuta = !_modoAgregarRuta;
+                      _modoAgregarPunto = false;
+                      _rutaEnProgreso.clear();
+                      _paradasEnProgreso.clear();
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildActionButton(
+                  icon: Icons.add_location,
+                  tooltip: 'Agregar Punto',
+                  color: _modoAgregarPunto ? Colors.orange : Colors.blueAccent,
+                  onPressed: () {
+                    setState(() {
+                      _modoAgregarPunto = !_modoAgregarPunto;
+                      _modoAgregarRuta = false;
+                    });
+                  },
+                ),
+                const SizedBox(height: 12),
+                _buildActionButton(
+                  icon: Icons.my_location,
+                  tooltip: 'Mi Ubicación',
+                  color: const Color(0xFF161925),
+                  iconColor: const Color(0xFFFF7F6C),
+                  onPressed: () => _mapKey.currentState?.centrarEnMiUbicacion(),
+                ),
+              ],
+            ),
+          ),
+
+          // 4. AVISO AL AGREGAR PUNTO
+          if (_modoAgregarPunto)
+            Positioned(
+              bottom: 30,
+              left: 20,
+              right: 80, 
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                decoration: BoxDecoration(
+                  color: Colors.blueAccent,
+                  borderRadius: BorderRadius.circular(10),
+                  boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 5)],
+                ),
+                child: const Text(
+                  'Tocá el mapa para ubicar el punto',
+                  style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+
+          // 5. PANEL INFERIOR AL TRAZAR RUTA
+          if (_modoAgregarRuta)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Container(
+                padding: const EdgeInsets.all(20),
+                decoration: const BoxDecoration(
+                  color: Color(0xFF161925),
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 10)],
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text('Puntos en la ruta: ${_rutaEnProgreso.length}', style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold, fontSize: 16)),
+                    const SizedBox(height: 5),
+                    SwitchListTile(
+                      title: const Text('El próximo toque es una PARADA', style: TextStyle(color: Colors.white, fontSize: 13)),
+                      subtitle: const Text('Apagalo si es solo una curva del camino', style: TextStyle(color: Colors.white38, fontSize: 11)),
+                      activeColor: Colors.greenAccent,
+                      value: _modoEsParada,
+                      onChanged: (val) => setState(() => _modoEsParada = val),
+                      contentPadding: EdgeInsets.zero,
                     ),
                     const SizedBox(height: 10),
-
-                    if (_modoAgregarRuta) ...[
-                      Text('Puntos en la ruta: ${_rutaEnProgreso.length}', style: const TextStyle(color: Colors.orangeAccent, fontWeight: FontWeight.bold)),
-                      SwitchListTile(
-                        title: const Text('El próximo toque es una PARADA', style: TextStyle(color: Colors.white, fontSize: 13)),
-                        subtitle: const Text('Apagalo si es solo una curva del camino', style: TextStyle(color: Colors.white38, fontSize: 11)),
-                        activeColor: Colors.greenAccent,
-                        value: _modoEsParada,
-                        onChanged: (val) => setState(() => _modoEsParada = val),
-                      ),
-                      const SizedBox(height: 10),
-                      Row(
-                        children: [
-                          Expanded(child: ElevatedButton.icon(onPressed: _guardarRutaEnProgreso, icon: const Icon(Icons.save), label: const Text('Guardar'), style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white))),
-                          const SizedBox(width: 10),
-                          Expanded(child: ElevatedButton.icon(onPressed: _cancelarRuta, icon: const Icon(Icons.cancel), label: const Text('Cancelar'), style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white))),
-                        ],
-                      ),
-                    ] 
-                    else ...[
-                      ElevatedButton.icon(
-                        onPressed: () => setState(() { _modoAgregarPunto = !_modoAgregarPunto; _modoAgregarRuta = false; }),
-                        icon: Icon(_modoAgregarPunto ? Icons.map : Icons.add_location),
-                        label: Text(_modoAgregarPunto ? 'Tocá el mapa para el Punto...' : 'Agregar Punto al Mapa'),
-                        style: ElevatedButton.styleFrom(backgroundColor: _modoAgregarPunto ? Colors.orange : Colors.blueAccent, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
-                      ),
-                      const SizedBox(height: 10),
-                      ElevatedButton.icon(
-                        onPressed: () => setState(() { _modoAgregarRuta = !_modoAgregarRuta; _modoAgregarPunto = false; _rutaEnProgreso.clear(); _paradasEnProgreso.clear(); }),
-                        icon: const Icon(Icons.alt_route),
-                        label: const Text('Trazar Ruta de Colectivo'),
-                        style: ElevatedButton.styleFrom(backgroundColor: _modoAgregarRuta ? Colors.orange : Colors.teal, foregroundColor: Colors.white, minimumSize: const Size(double.infinity, 50)),
-                      ),
-                    ],
-                    const SizedBox(height: 20),
-                    ElevatedButton.icon(
-                      onPressed: () => _mapKey.currentState?.centrarEnMiUbicacion(),
-                      icon: const Icon(Icons.my_location),
-                      label: const Text('Centrar en mi ubicación'),
-                      style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFF7F6C), foregroundColor: const Color(0xFF131622), minimumSize: const Size(double.infinity, 50)),
+                    Row(
+                      children: [
+                        Expanded(child: ElevatedButton.icon(onPressed: _guardarRutaEnProgreso, icon: const Icon(Icons.save), label: const Text('Guardar'), style: ElevatedButton.styleFrom(backgroundColor: Colors.green, foregroundColor: Colors.white, minimumSize: const Size(0, 45)))),
+                        const SizedBox(width: 10),
+                        Expanded(child: ElevatedButton.icon(onPressed: _cancelarRuta, icon: const Icon(Icons.cancel), label: const Text('Cancelar'), style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent, foregroundColor: Colors.white, minimumSize: const Size(0, 45)))),
+                      ],
                     ),
                   ],
                 ),
               ),
             ),
-          ),
         ],
       ),
     );
   }
 
-  Widget _buildSwitchChip(String label, bool value, Function(bool) onChanged) {
+  Widget _buildFloatingChip(String label, bool value, Function(bool) onChanged) {
     return FilterChip(
-      label: Text(label, style: TextStyle(color: value ? Colors.black : Colors.white70, fontSize: 12)),
+      label: Text(label, style: TextStyle(color: value ? Colors.black : Colors.white70, fontSize: 12, fontWeight: FontWeight.bold)),
       selected: value,
       selectedColor: const Color(0xFFFF7F6C),
-      backgroundColor: const Color(0xFF161925),
+      backgroundColor: const Color(0xFF161925).withOpacity(0.9),
       checkmarkColor: Colors.black,
       onSelected: onChanged,
+      elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20), side: const BorderSide(color: Colors.white24)),
+    );
+  }
+
+  Widget _buildActionButton({required IconData icon, required String tooltip, required Color color, Color iconColor = Colors.white, required VoidCallback onPressed}) {
+    return Tooltip(
+      message: tooltip,
+      child: FloatingActionButton(
+        heroTag: tooltip,
+        backgroundColor: color,
+        foregroundColor: iconColor,
+        onPressed: onPressed,
+        child: Icon(icon),
+      ),
     );
   }
 }
