@@ -94,7 +94,7 @@ class RutaMapState extends State<RutaMap> {
     _mapController.move(LatLng(posicion.latitude, posicion.longitude), 16);
   }
 
-    // Método para mover la cámara del mapa a una coordenada específica
+  // Método para mover la cámara del mapa a una coordenada específica
   void moverCamara(LatLng punto, double zoom) {
     _mapController.move(punto, zoom);
   }
@@ -181,12 +181,37 @@ class RutaMapState extends State<RutaMap> {
         if (puntosFiltrados.isNotEmpty)
           MarkerLayer(
             markers: puntosFiltrados.map((punto) {
-              double sizeIcon = _currentZoom >= 15 ? 40 : (_currentZoom >= 12 ? 24 : 10);
+              // Tamaño y resplandor dinámico según el zoom
+              double sizeBase = _currentZoom >= 15 ? 22 : (_currentZoom >= 12 ? 14 : 8);
+              double blurGlow = _currentZoom >= 15 ? 16 : (_currentZoom >= 12 ? 8 : 4);
+              
+              // Color según la categoría
+              Color colorPunto = punto.categoria == 'evento' 
+                  ? const Color(0xFFFF4081) // Rosa vibrante para eventos
+                  : const Color(0xFF00E5FF); // Cian brillante para lugares
+
               return Marker(
-                point: punto.punto, width: sizeIcon, height: sizeIcon,
-                child: _currentZoom >= 12 
-                  ? Icon(punto.icono, color: punto.color, size: sizeIcon, shadows: const [Shadow(color: Colors.black87, blurRadius: 4)])
-                  : Container(decoration: BoxDecoration(color: punto.color, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.5), boxShadow: const [BoxShadow(color: Colors.black45, blurRadius: 3)])),
+                point: punto.punto, 
+                width: sizeBase * 3, // Damos margen para que no se corte el resplandor
+                height: sizeBase * 3,
+                child: Center(
+                  child: Container(
+                    width: sizeBase,
+                    height: sizeBase,
+                    decoration: BoxDecoration(
+                      color: colorPunto,
+                      shape: BoxShape.circle,
+                      border: Border.all(color: Colors.white, width: _currentZoom >= 12 ? 2 : 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: colorPunto.withOpacity(0.8),
+                          blurRadius: blurGlow,
+                          spreadRadius: blurGlow / 3,
+                        )
+                      ]
+                    ),
+                  ),
+                ),
               );
             }).toList(),
           ),
