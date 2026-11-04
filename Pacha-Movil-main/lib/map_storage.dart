@@ -10,7 +10,6 @@ class MapStorage {
     return _db.collection('puntos').snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
-        // Le inyectamos el ID que le asignó Firestore al documento
         data['id'] = doc.id; 
         return PuntoInteres.fromJson(data);
       }).toList();
@@ -31,7 +30,7 @@ class MapStorage {
 
   Future<void> guardarPunto(PuntoInteres punto) async {
     final data = punto.toJson();
-    data.remove('id'); // Firestore genera su propio ID
+    data.remove('id'); 
     await _db.collection('puntos').add(data);
   }
 
@@ -39,6 +38,14 @@ class MapStorage {
     final data = ruta.toJson();
     data.remove('id'); 
     await _db.collection('rutas').add(data);
+  }
+
+  // ─── ACTUALIZAR (Para agregar reseñas) ───
+  Future<void> actualizarPunto(PuntoInteres punto) async {
+    final data = punto.toJson();
+    data.remove('id'); 
+    // Actualizamos el documento específico usando su ID
+    await _db.collection('puntos').doc(punto.id).update(data);
   }
 
   // ─── ELIMINAR ───
