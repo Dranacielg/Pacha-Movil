@@ -111,71 +111,125 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     }
   }
 
-  void _analizarDestino(LatLng destino) async {
-    if (_miUbicacion == null) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Necesitamos tu ubicación GPS para calcular')));
-      return;
-    }
-    setState(() {
-      _destinoTocado = destino;
-      _calculandoRuta = true;
-      _rutaSeleccionada = null;
-      _paradaSubida = null;
-      _paradaBajada = null;
-      _paradasCercanasAlDestino.clear();
-      _modoMira = false;
-    });
+void _analizarDestino(LatLng destino) async {
+  if (_miUbicacion == null) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Necesitamos tu ubicación GPS para calcular')));
+    return;
+  }
+  setState(() {
+    _destinoTocado = destino;
+    _calculandoRuta = true;
+    _rutaSeleccionada = null;
+    _paradaSubida = null;
+    _paradaBajada = null;
+    _paradasCercanasAlDestino.clear();
+    _modoMira = false;
+  });
 
-    const Distance dist = Distance();
-    List<Map<String, dynamic>> resultados = [];
+  const Distance dist = Distance();
+  List<Map<String, dynamic>> resultados = [];
 
-    for (var ruta in _rutas) {
-      int indexSubida = -1;
-      double minDistOrigen = double.infinity;
-      for (int i = 0; i < ruta.paradas.length; i++) {
-        double d = dist.as(LengthUnit.Meter, ruta.paradas[i], _miUbicacion!);
-        if (d < minDistOrigen) {
-          minDistOrigen = d;
-          indexSubida = i;
-        }
-      }
-      int indexBajada = -1;
-      double minDistDestino = double.infinity;
-      if (indexSubida != -1) {
-        for (int i = indexSubida + 1; i < ruta.paradas.length; i++) {
-          double d = dist.as(LengthUnit.Meter, ruta.paradas[i], destino);
-          if (d < minDistDestino) {
-            minDistDestino = d;
-            indexBajada = i;
-          }
-        }
-      }
-      if (indexBajada != -1 && minDistDestino <= 500) {
-        LatLng paradaSubida = ruta.paradas[indexSubida];
-        LatLng paradaBajada = ruta.paradas[indexBajada];
-        resultados.add({
-          'ruta': ruta,
-          'paradaSubida': paradaSubida,
-          'distanciaSubida': minDistOrigen,
-          'paradaBajada': paradaBajada,
-          'distanciaBajada': minDistDestino,
-          'sentido': 'Hacia el final de la línea',
-        });
-        if (!_paradasCercanasAlDestino.contains(paradaBajada)) {
-          _paradasCercanasAlDestino.add(paradaBajada);
-        }
-      }
+  // Parámetros
+  const double maxCaminataSubida = 700; // cuánto aceptamos caminar hasta la parada
+  const double maxCaminataBajada = 500; // cuánto aceptamos caminar desde la parada
+  const double pesoPorParada = 15; // 15 "metros virtuales" por parada de recorrido
+
+  for (var ruta in _rutas) {
+    final paradas = ruta.paradas;
+    if (paradas.length < 2) continue;
+
+    // 1. Precalcular distancia al origen y al destino para cada parada
+    final distOrigen = List<double>.filled(paradas.length, double.infinity);
+    final distDestino = List<double>.filled(paradas.length, double.infinity);
+
+    for (int i = 0; i < paradas.length; i++) {
+      distOrigen[i] = dist.as(LengthUnit.Meter, paradas[i], _miUbicacion!);
+      distDestino[i] = dist.as(LengthUnit.Meter, paradas[i], destino);
     }
 
-    resultados.sort((a, b) => (a['distanciaSubida'] as double).compareTo(b['distanciaSubida'] as double));
-    setState(() => _calculandoRuta = false);
+    // 2. Buscar el mejor par (subida < bajada) por costo total
+    double mejorCosto = double.infinity;
+    int mejorSubida = -1;
+    int mejorBajada = -1;
 
-    if (resultados.isNotEmpty) {
-      _mostrarPanelResultados(resultados);
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay colectivos que te sirvan para ese viaje')));
+    for (int i = 0; i < paradas.length; i++) {
+      if (distOrigen[i] > maxCaminataSubida) continue;
+
+      // Pequeña optimización: si la subida ya supera el mejor costo, saltamos
+      if (distOrigen[i] >= mejorCosto) continue;
+
+      for (int j = i + 1; j < paradas.length; j++) {
+        if (distDestino[j] > maxCaminataBajada) continue;
+
+        // Costo: caminar a la subida + caminar desde la bajada
+        // + penalización por la cantidad de paradas de recorrido entre i y j
+        final costo = distOrigen[i] +
+            distDestino[j] +
+            (j - i) * pesoPorParada;
+
+        if (costo < mejorCosto) {
+          mejorCosto = costo;
+          mejorSubida = i;
+          mejorBajada = j;
+        }
+      }
+    }
+
+    // 3. Si encontramos un par válido, lo agregamos a los resultados
+    if (mejorSubida != -1 && mejorBajada != -1) {
+      final paradaSubida = paradas[mejorSubida];
+      final paradaBajada = paradas[mejorBajada];
+
+      resultados.add({
+        'ruta': ruta,
+        'paradaSubida': paradaSubida,
+        'distanciaSubida': distOrigen[mejorSubida],
+        'paradaBajada': paradaBajada,
+        'distanciaBajada': distDestino[mejorBajada],
+        'paradasRecorrido': mejorBajada - mejorSubida,
+        'sentido': mejorBajada > paradas.length ~/ 2
+            ? 'Hacia el final de la línea'
+            : 'Hacia el inicio de la línea',
+      });
+
+      if (!_paradasCercanasAlDestino.contains(paradaBajada)) {
+        _paradasCercanasAlDestino.add(paradaBajada);
+      }
+
+      // 🔍 DEBUG: descomentar para ver los detalles en consola
+      // debugPrint(
+      //   '[${ruta.nombre}] subida=${mejorSubida}, bajada=${mejorBajada}, '
+      //   'paradas=${mejorBajada - mejorSubida}, '
+      //   'distSub=${distOrigen[mejorSubida].toStringAsFixed(0)}m, '
+      //   'distBaj=${distDestino[mejorBajada].toStringAsFixed(0)}m, '
+      //   'costo=${mejorCosto.toStringAsFixed(0)}',
+      // );
     }
   }
+
+  // 4. Ordenar por costo total (no solo por distancia de subida)
+  resultados.sort((a, b) {
+    final costA = (a['distanciaSubida'] as double) +
+        (a['distanciaBajada'] as double) +
+        (a['paradasRecorrido'] as int) * pesoPorParada;
+    final costB = (b['distanciaSubida'] as double) +
+        (b['distanciaBajada'] as double) +
+        (b['paradasRecorrido'] as int) * pesoPorParada;
+    return costA.compareTo(costB);
+  });
+
+  setState(() => _calculandoRuta = false);
+
+  if (resultados.isNotEmpty) {
+    _mostrarPanelResultados(resultados);
+  } else {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+          content: Text('No hay colectivos que te sirvan para ese viaje')),
+    );
+  }
+}
 
  void _mostrarPanelResultados(List<Map<String, dynamic>> rutasCercanas) {
   showModalBottomSheet(
