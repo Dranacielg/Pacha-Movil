@@ -3,11 +3,13 @@ import 'widgets/resena_modal.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'map_data.dart';
 import 'map_storage.dart';
 import 'widgets/ruta_map.dart';
-import 'utils/map_launcher.dart'; // <-- Para el botón de Cómo llegar
+import 'utils/map_launcher.dart';
+import 'colectivosyrutas.dart';
 
 class LugaresConocerScreen extends StatefulWidget {
   const LugaresConocerScreen({super.key});
@@ -25,7 +27,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
   StreamSubscription? _subPuntos;
 
   PuntoInteres? _lugarSeleccionado;
-  
   String _categoriaSeleccionada = 'gastronomia';
 
   final List<Map<String, dynamic>> _categorias = [
@@ -35,6 +36,9 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     {'id': 'cultura', 'nombre': 'Cultura', 'icono': Icons.theaters},
     {'id': 'compras', 'nombre': 'Compras', 'icono': Icons.shopping_bag},
   ];
+
+  bool get _esAdmin =>
+      FirebaseAuth.instance.currentUser?.email == 'admin@pacha.com';
 
   bool _permiteResenas(String subCategoria) {
     return ['gastronomia', 'cultura', 'compras'].contains(subCategoria);
@@ -60,92 +64,654 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
   }
 
   void _actualizarListaFiltrada() {
-    _lugaresFiltrados = _todosLosPuntos.where((p) => 
-      p.categoria == 'lugar' && p.categoriaLugar == _categoriaSeleccionada
-    ).toList();
+    _lugaresFiltrados = _todosLosPuntos.where((p) =>
+        p.categoria == 'lugar' &&
+        p.categoriaLugar == _categoriaSeleccionada).toList();
 
-    if (_lugarSeleccionado != null && !_lugaresFiltrados.any((e) => e.id == _lugarSeleccionado!.id)) {
+    if (_lugarSeleccionado != null &&
+        !_lugaresFiltrados.any((e) => e.id == _lugarSeleccionado!.id)) {
       _lugarSeleccionado = null;
     }
   }
 
+  // ─── Abierto / cerrado ───
   bool _estaAbierto(PuntoInteres lugar) {
-    if (lugar.horarios.isEmpty) return true; 
-    
+    if (lugar.horarios.isEmpty) return true;
     final now = DateTime.now();
-    final dias = ['Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'];
+    final dias = [
+      'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado', 'Domingo'
+    ];
     final diaHoy = dias[now.weekday - 1];
-    final ahoraMinutos = now.hour * 60 + now.minute;
+    final ahoraMin = now.hour * 60 + now.minute;
 
-    final horariosHoy = lugar.horarios.where((h) => h.dia == diaHoy).toList();
-    if (horariosHoy.isEmpty) return false;
-
-    for (var h in horariosHoy) {
+    for (var h in lugar.horarios.where((h) => h.dia == diaHoy)) {
       try {
-        int parseTime(String timeStr) {
-           String clean = timeStr.toLowerCase().replaceAll('a. m.', 'am').replaceAll('p. m.', 'pm');
-           bool isPM = clean.contains('pm');
-           clean = clean.replaceAll('am', '').replaceAll('pm', '').trim();
-           var parts = clean.split(':');
-           int hr = int.parse(parts[0]);
-           int min = parts.length > 1 ? int.parse(parts[1]) : 0;
-           if (isPM && hr < 12) hr += 12;
-           if (!isPM && hr == 12) hr = 0;
-           return hr * 60 + min;
+        int parseTime(String s) {
+          String clean = s.toLowerCase();
+          bool isPM = clean.contains('pm') || clean.contains('p. m.');
+          clean = clean
+              .replaceAll('a. m.', '')
+              .replaceAll('p. m.', '')
+              .replaceAll('am', '')
+              .replaceAll('pm', '')
+              .trim();
+          final parts = clean.split(':');
+          int hr = int.parse(parts[0]);
+          int mn = parts.length > 1 ? int.parse(parts[1]) : 0;
+          if (isPM && hr < 12) hr += 12;
+          if (!isPM && hr == 12) hr = 0;
+          return hr * 60 + mn;
         }
 
-        int start = parseTime(h.apertura);
-        int end = parseTime(h.cierre);
-
-        if (start == end) return true; 
-
-        if (end < start) {
-          if (ahoraMinutos >= start || ahoraMinutos <= end) return true;
+        final ini = parseTime(h.apertura);
+        final fin = parseTime(h.cierre);
+        if (ini == fin) return true;
+        if (fin < ini) {
+          if (ahoraMin >= ini || ahoraMin <= fin) return true;
         } else {
-          if (ahoraMinutos >= start && ahoraMinutos <= end) return true;
+          if (ahoraMin >= ini && ahoraMin <= fin) return true;
         }
-      } catch (e) {
-        // Error de formato de hora
-      }
+      } catch (_) {}
     }
-    return false; 
+    return false;
   }
 
-  void _copiarCoordenadas(PuntoInteres lugar) {
-    Clipboard.setData(ClipboardData(text: '${lugar.lat}, ${lugar.lng}'));
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('📍 Coordenadas copiadas para usar en otras apps.')),
+  // ─── Reseñas ordenadas ───
+  List<Resena> _resenasOrdenadas(List<Resena> resenas) {
+    final copia = List<Resena>.from(resenas);
+    copia.sort((a, b) {
+      final fa = a.fecha ?? 0;
+      final fb = b.fecha ?? 0;
+      return fb.compareTo(fa); // más nuevas primero
+    });
+    return copia;
+  }
+
+  // ─── Copiar / compartir ───
+   void _irAColectivos(PuntoInteres lugar) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => ColectivosY_Rutas(
+          destinoInicial: lugar.punto,
+          nombreDestino: lugar.nombre,
+        ),
+      ),
     );
   }
 
+  // ─── Dejar reseña ───
+  Future<Resena?> _crearResena(PuntoInteres lugar) async {
+    final nueva = await showModalBottomSheet<Resena>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF161925),
+      shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => ResenaModal(lugar: lugar),
+    );
+    if (nueva == null) return null;
+    // Le agregamos la fecha porque ResenaModal no la conoce
+    return Resena(
+      usuario: nueva.usuario,
+      comentario: nueva.comentario,
+      estetica: nueva.estetica,
+      atencion: nueva.atencion,
+      servicios: nueva.servicios,
+      fecha: DateTime.now().millisecondsSinceEpoch,
+    );
+  }
+
+  Future<void> _guardarResena(
+      PuntoInteres lugar, Resena resena, StateSetter setSheetState) async {
+    final actualizadas = [...lugar.resenas, resena];
+    final lugarActualizado = _clonarLugar(lugar, resenas: actualizadas);
+    await _storage.actualizarPunto(lugarActualizado);
+    setSheetState(() {});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('¡Gracias por tu reseña!')),
+      );
+    }
+  }
+
+  Future<void> _eliminarResena(
+      PuntoInteres lugar, Resena resena, StateSetter setSheetState) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E2235),
+        title: const Text('¿Eliminar reseña?',
+            style: TextStyle(color: Colors.white)),
+        content: Text(
+          'La reseña de "${resena.usuario}" se va a borrar.\n'
+          'Esto no se puede deshacer.',
+          style: const TextStyle(color: Colors.white70),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Cancelar')),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              style:
+                  ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+              child: const Text('Eliminar')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+
+    final actualizadas = lugar.resenas.where((r) => r != resena).toList();
+    final lugarActualizado = _clonarLugar(lugar, resenas: actualizadas);
+    await _storage.actualizarPunto(lugarActualizado);
+    setSheetState(() {});
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('🗑️ Reseña eliminada')),
+      );
+    }
+  }
+
+  PuntoInteres _clonarLugar(PuntoInteres l, {List<Resena>? resenas}) {
+    return PuntoInteres(
+      id: l.id,
+      nombre: l.nombre,
+      descripcion: l.descripcion,
+      lat: l.lat,
+      lng: l.lng,
+      iconoCode: l.iconoCode,
+      colorValue: l.colorValue,
+      categoria: l.categoria,
+      categoriaLugar: l.categoriaLugar,
+      horarios: l.horarios,
+      resenas: resenas ?? l.resenas,
+      fechaInicio: l.fechaInicio,
+      fechaFin: l.fechaFin,
+    );
+  }
+
+  bool _puedeEliminarResena(Resena r) {
+    final email = FirebaseAuth.instance.currentUser?.email;
+    if (email == null) return false;
+    if (email == 'admin@pacha.com') return true;
+    return r.usuario == email;
+  }
+
+  // ══════════════════════════════════════════
+  // BOTTOM SHEET DE DETALLE
+  // ══════════════════════════════════════════
+  void _mostrarDetalleLugar(PuntoInteres lugar) {
+    setState(() => _lugarSeleccionado = lugar);
+    _mapKey.currentState?.moverCamara(lugar.punto, 16);
+
+    PuntoInteres lugarLocal = lugar;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheetState) => DraggableScrollableSheet(
+          initialChildSize: 0.75,
+          minChildSize: 0.5,
+          maxChildSize: 0.95,
+          expand: false,
+          builder: (ctx, scrollCtrl) => Container(
+            decoration: const BoxDecoration(
+              color: Color(0xFF161925),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            ),
+            child: _buildDetalleLugar(lugarLocal, scrollCtrl, setSheetState),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildDetalleLugar(PuntoInteres lugar, ScrollController scrollCtrl,
+      StateSetter setSheetState) {
+    final abierto = _estaAbierto(lugar);
+    final resenasOrd = _resenasOrdenadas(lugar.resenas);
+    final puedeResenar = _permiteResenas(lugar.categoriaLugar);
+
+    return ListView(
+      controller: scrollCtrl,
+      padding: const EdgeInsets.all(16),
+      children: [
+        // Handle
+        Center(
+          child: Container(
+            width: 40,
+            height: 5,
+            decoration: BoxDecoration(
+              color: Colors.white24,
+              borderRadius: BorderRadius.circular(10),
+            ),
+          ),
+        ),
+        const SizedBox(height: 16),
+
+        // Header
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: 60,
+              height: 60,
+              decoration: BoxDecoration(
+                color: const Color(0xFF2E334D),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Icon(lugar.icono, color: lugar.color, size: 30),
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: abierto
+                              ? Colors.green.withOpacity(0.2)
+                              : Colors.red.withOpacity(0.2),
+                          borderRadius: BorderRadius.circular(4),
+                          border: Border.all(
+                              color: abierto ? Colors.green : Colors.red,
+                              width: 0.5),
+                        ),
+                        child: Text(
+                          abierto ? 'ABIERTO' : 'CERRADO',
+                          style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                              color: abierto
+                                  ? Colors.greenAccent
+                                  : Colors.redAccent),
+                        ),
+                      ),
+                      const Spacer(),
+                      if (lugar.categoriaLugar.isNotEmpty)
+                        Text(
+                          lugar.categoriaLugar.toUpperCase(),
+                          style: const TextStyle(
+                              fontSize: 9,
+                              color: Colors.white38,
+                              fontWeight: FontWeight.bold),
+                        ),
+                    ],
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    lugar.nombre,
+                    style: const TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+
+        // Rating
+        if (lugar.resenas.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              const Icon(Icons.star, color: Colors.amber, size: 20),
+              const SizedBox(width: 4),
+              Text(
+                lugar.puntuacionPromedio.toStringAsFixed(1),
+                style: const TextStyle(
+                    color: Colors.amber,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(width: 6),
+              Text(
+                '· ${lugar.resenas.length} reseña${lugar.resenas.length == 1 ? "" : "s"}',
+                style: const TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ],
+          ),
+        ],
+
+        // Descripción
+        if (lugar.descripcion.isNotEmpty) ...[
+          const SizedBox(height: 16),
+          Text(
+            lugar.descripcion,
+            style: const TextStyle(
+                color: Colors.white70, fontSize: 14, height: 1.4),
+          ),
+        ],
+
+        // Horarios
+        if (lugar.horarios.isNotEmpty) ...[
+          const SizedBox(height: 20),
+          const Text('HORARIOS',
+              style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.white38,
+                  fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          ...lugar.horarios.map((h) => Padding(
+                padding: const EdgeInsets.only(bottom: 4),
+                child: Row(
+                  children: [
+                    const Icon(Icons.access_time,
+                        size: 14, color: Colors.white54),
+                    const SizedBox(width: 8),
+                    Text(
+                      h.dia,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600),
+                    ),
+                    const Spacer(),
+                    Text('${h.apertura} - ${h.cierre}',
+                        style: const TextStyle(
+                            color: Colors.white70, fontSize: 13)),
+                  ],
+                ),
+              )),
+        ],
+
+        const SizedBox(height: 20),
+
+        // Acciones
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+                        OutlinedButton.icon(
+              onPressed: () => _irAColectivos(lugar),
+              icon: const Icon(Icons.directions_bus,
+                  size: 16, color: Colors.teal),
+              label: const Text('Colectivo',
+                  style: TextStyle(color: Colors.teal, fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.teal),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+            OutlinedButton.icon(
+              onPressed: () => MapLauncher.showAppChooser(
+                context: context,
+                lat: lugar.lat,
+                lng: lugar.lng,
+                nombreLugar: lugar.nombre,
+              ),
+              icon: const Icon(Icons.directions,
+                  size: 16, color: Colors.greenAccent),
+              label: const Text('Cómo llegar',
+                  style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
+              style: OutlinedButton.styleFrom(
+                side: const BorderSide(color: Colors.greenAccent),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+              ),
+            ),
+            if (puedeResenar)
+              OutlinedButton.icon(
+                onPressed: () async {
+                  final nueva = await _crearResena(lugar);
+                  if (nueva == null) return;
+                  await _guardarResena(lugar, nueva, setSheetState);
+                  // Refrescar el lugar local con la nueva reseña
+                  final refrescado = _todosLosPuntos.firstWhere(
+                      (p) => p.id == lugar.id,
+                      orElse: () => lugar);
+                  setSheetState(() {});
+                  // Actualizamos el local manualmente
+                  // (el stream de Firestore ya actualiza el global,
+                  //  pero el bottom sheet necesita el objeto local)
+                },
+                icon: const Icon(Icons.rate_review,
+                    size: 16, color: Color(0xFFFF7F6C)),
+                label: const Text('Dejar reseña',
+                    style: TextStyle(
+                        color: Color(0xFFFF7F6C), fontSize: 12)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: Color(0xFFFF7F6C)),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                ),
+              ),
+          ],
+        ),
+
+        const SizedBox(height: 20),
+
+        // Sección reseñas
+        if (puedeResenar) ...[
+          const Divider(color: Colors.white12),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              const Text('RESEÑAS',
+                  style: TextStyle(
+                      fontSize: 11,
+                      color: Colors.white38,
+                      fontWeight: FontWeight.bold)),
+              const SizedBox(width: 6),
+              Text('(${lugar.resenas.length})',
+                  style: const TextStyle(
+                      fontSize: 11,
+                      color: Colors.white38,
+                      fontWeight: FontWeight.bold)),
+            ],
+          ),
+          const SizedBox(height: 12),
+          if (lugar.resenas.isEmpty)
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1E2235),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.chat_bubble_outline,
+                      color: Colors.white24, size: 20),
+                  SizedBox(width: 10),
+                  Expanded(
+                    child: Text(
+                      'Todavía no hay reseñas. ¡Sé el primero!',
+                      style: TextStyle(color: Colors.white38, fontSize: 12),
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else
+            ...resenasOrd.map((r) => _buildResenaCard(r, lugar, setSheetState)),
+        ],
+        const SizedBox(height: 16),
+      ],
+    );
+  }
+
+  Widget _buildResenaCard(
+      Resena r, PuntoInteres lugar, StateSetter setSheetState) {
+    final puedeBorrar = _puedeEliminarResena(r);
+    final fechaStr = r.fecha != null ? _formatearFechaResena(r.fecha!) : '';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 10),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: const Color(0xFF1E2235),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.white10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              CircleAvatar(
+                radius: 14,
+                backgroundColor: const Color(0xFF2E334D),
+                child: Text(
+                  r.usuario.isNotEmpty
+                      ? r.usuario[0].toUpperCase()
+                      : '?',
+                  style: const TextStyle(
+                      color: Color(0xFFFF7F6C),
+                      fontSize: 12,
+                      fontWeight: FontWeight.bold),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      r.usuario,
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold),
+                    ),
+                    Row(
+                      children: [
+                        const Icon(Icons.star, color: Colors.amber, size: 12),
+                        const SizedBox(width: 2),
+                        Text(
+                          r.promedio.toStringAsFixed(1),
+                          style: const TextStyle(
+                              color: Colors.amber,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
+                        ),
+                        if (fechaStr.isNotEmpty) ...[
+                          const SizedBox(width: 8),
+                          Text(fechaStr,
+                              style: const TextStyle(
+                                  color: Colors.white38, fontSize: 10)),
+                        ],
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (puedeBorrar)
+                PopupMenuButton<String>(
+                  icon: const Icon(Icons.more_vert,
+                      color: Colors.white38, size: 18),
+                  padding: EdgeInsets.zero,
+                  onSelected: (v) {
+                    if (v == 'del') {
+                      _eliminarResena(lugar, r, setSheetState);
+                    }
+                  },
+                  itemBuilder: (_) => const [
+                    PopupMenuItem(
+                      value: 'del',
+                      child: Row(
+                        children: [
+                          Icon(Icons.delete, color: Colors.redAccent, size: 16),
+                          SizedBox(width: 8),
+                          Text('Eliminar',
+                              style: TextStyle(
+                                  color: Colors.redAccent, fontSize: 13)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+            ],
+          ),
+                   if (r.comentario.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              r.comentario,
+              style: const TextStyle(
+                  color: Colors.white70, fontSize: 13, height: 1.4),
+              maxLines: 4,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ],
+          const SizedBox(height: 10),
+          // Detalle de puntuaciones
+          Wrap(
+            spacing: 12,
+            runSpacing: 4,
+            children: [
+              _miniPuntaje('Estética', r.estetica),
+              _miniPuntaje('Atención', r.atencion),
+              _miniPuntaje('Servicios', r.servicios),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniPuntaje(String label, double valor) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text('$label: ',
+            style: const TextStyle(color: Colors.white38, fontSize: 10)),
+        const Icon(Icons.star, color: Colors.amber, size: 10),
+        const SizedBox(width: 1),
+        Text(valor.toStringAsFixed(1),
+            style: const TextStyle(color: Colors.amber, fontSize: 10)),
+      ],
+    );
+  }
+
+  String _formatearFechaResena(int ts) {
+    final fecha = DateTime.fromMillisecondsSinceEpoch(ts);
+    final ahora = DateTime.now();
+    final diff = ahora.difference(fecha);
+    if (diff.inDays == 0) return 'Hoy';
+    if (diff.inDays == 1) return 'Ayer';
+    if (diff.inDays < 7) return 'Hace ${diff.inDays} días';
+    return '${fecha.day}/${fecha.month}/${fecha.year}';
+  }
+
+  // ══════════════════════════════════════════
+  // BUILD
+  // ══════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.transparent,
         elevation: 0,
-        title: const Text('Lugares para Conocer', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+        title: const Text('Lugares para Conocer',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
-          // MANTENEMOS EL ÍCONO DE AJUSTES DE TU EQUIPO
-          const Padding(
-            padding: EdgeInsets.only(right: 8.0),
-            child: Icon(Icons.tune, size: 20, color: Colors.white70),
-          ),
-          // BOTÓN PARA CERRAR LA SELECCIÓN DEL MAPA
           if (_lugarSeleccionado != null)
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white),
               onPressed: () => setState(() => _lugarSeleccionado = null),
-            )
+            ),
         ],
       ),
       body: Column(
         children: [
+          // Mapa
           Container(
             height: 200,
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 16),
-            decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.white10)),
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white10),
+            ),
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: Stack(
@@ -156,22 +722,38 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                     mostrarColectivos: false,
                     mostrarEventos: false,
                     mostrarLugares: true,
-                    puntos: _lugarSeleccionado != null ? [_lugarSeleccionado!] : [],
+                    puntos:
+                        _lugarSeleccionado != null ? [_lugarSeleccionado!] : [],
                     rutas: const [],
                     modoAgregarPunto: false,
                   ),
                   if (_lugarSeleccionado == null)
                     const Positioned(
-                      top: 10, left: 0, right: 0,
+                      top: 10,
+                      left: 0,
+                      right: 0,
                       child: Center(
-                        child: Text('Tocá un lugar de la lista para verlo', style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)),
+                        child: Text(
+                          'Tocá un lugar para verlo en el mapa',
+                          style: TextStyle(
+                              color: Colors.black54,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
+                        ),
                       ),
                     ),
                   Positioned(
-                    bottom: 12, right: 12,
+                    bottom: 12,
+                    right: 12,
                     child: GestureDetector(
-                      onTap: () => _mapKey.currentState?.centrarEnMiUbicacion(),
-                      child: const CircleAvatar(radius: 16, backgroundColor: Color(0xFFFF7F6C), child: Icon(Icons.my_location, size: 16, color: Color(0xFF131622))),
+                      onTap: () =>
+                          _mapKey.currentState?.centrarEnMiUbicacion(),
+                      child: const CircleAvatar(
+                        radius: 16,
+                        backgroundColor: Color(0xFFFF7F6C),
+                        child: Icon(Icons.my_location,
+                            size: 16, color: Color(0xFF131622)),
+                      ),
                     ),
                   ),
                 ],
@@ -180,7 +762,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
           const SizedBox(height: 12),
 
-          // FILTROS POR CATEGORÍA
+          // Categorías
           SizedBox(
             height: 40,
             child: ListView.builder(
@@ -189,21 +771,24 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
               itemCount: _categorias.length,
               itemBuilder: (context, index) {
                 final cat = _categorias[index];
-                bool isSelected = _categoriaSeleccionada == cat['id'];
-                
+                final isSel = _categoriaSeleccionada == cat['id'];
                 return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
+                  padding: const EdgeInsets.only(right: 8),
                   child: FilterChip(
                     label: Text(cat['nombre']),
-                    avatar: Icon(cat['icono'], size: 16, color: isSelected ? Colors.black : Colors.white70),
-                    selected: isSelected,
+                    avatar: Icon(cat['icono'],
+                        size: 16,
+                        color: isSel ? Colors.black : Colors.white70),
+                    selected: isSel,
                     selectedColor: const Color(0xFFFF7F6C),
                     backgroundColor: const Color(0xFF1E2235),
-                    labelStyle: TextStyle(color: isSelected ? Colors.black : Colors.white70, fontSize: 12),
-                    onSelected: (val) {
+                    labelStyle: TextStyle(
+                        color: isSel ? Colors.black : Colors.white70,
+                        fontSize: 12),
+                    onSelected: (_) {
                       setState(() {
                         _categoriaSeleccionada = cat['id'];
-                        _lugarSeleccionado = null; 
+                        _lugarSeleccionado = null;
                         _actualizarListaFiltrada();
                       });
                     },
@@ -214,29 +799,38 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
           const SizedBox(height: 10),
 
-          // TÍTULO Y LISTA
+          // Título lista
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
+            padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text('LUGARES DISPONIBLES', style: TextStyle(fontSize: 10, color: Colors.white38, fontWeight: FontWeight.bold)),
-                Text('${_lugaresFiltrados.length} encontrados', style: const TextStyle(fontSize: 12, color: Color(0xFFFF7F6C), fontWeight: FontWeight.bold)),
+                const Text('LUGARES DISPONIBLES',
+                    style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.white38,
+                        fontWeight: FontWeight.bold)),
+                Text('${_lugaresFiltrados.length} encontrados',
+                    style: const TextStyle(
+                        fontSize: 12,
+                        color: Color(0xFFFF7F6C),
+                        fontWeight: FontWeight.bold)),
               ],
             ),
           ),
           const SizedBox(height: 8),
 
+          // Lista
           Expanded(
             child: _lugaresFiltrados.isEmpty
-                ? const Center(child: Text('No hay lugares en esta categoría', style: TextStyle(color: Colors.white38)))
+                ? const Center(
+                    child: Text('No hay lugares en esta categoría',
+                        style: TextStyle(color: Colors.white38)))
                 : ListView.builder(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     itemCount: _lugaresFiltrados.length,
-                    itemBuilder: (context, index) {
-                      final lugar = _lugaresFiltrados[index];
-                      return _buildLugarItem(lugar);
-                    },
+                    itemBuilder: (context, index) =>
+                        _buildLugarCard(_lugaresFiltrados[index]),
                   ),
           ),
         ],
@@ -245,28 +839,24 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     );
   }
 
-  Widget _buildLugarItem(PuntoInteres lugar) {
-    bool isSelected = _lugarSeleccionado?.id == lugar.id;
-    bool abierto = _estaAbierto(lugar);
-    bool tieneResenas = _permiteResenas(lugar.categoriaLugar);
+  Widget _buildLugarCard(PuntoInteres lugar) {
+    final abierto = _estaAbierto(lugar);
+    final tieneResenas = _permiteResenas(lugar.categoriaLugar);
 
     return GestureDetector(
-      onTap: () {
-        setState(() {
-          if (isSelected) {
-            _mapKey.currentState?.moverCamara(lugar.punto, 16);
-          } else {
-            _lugarSeleccionado = lugar;
-          }
-        });
-      },
+      onTap: () => _mostrarDetalleLugar(lugar),
       child: Container(
         margin: const EdgeInsets.only(bottom: 12),
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
-          color: isSelected ? const Color(0xFF2E334D) : const Color(0xFF1E2235),
+          color: _lugarSeleccionado?.id == lugar.id
+              ? const Color(0xFF2E334D)
+              : const Color(0xFF1E2235),
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: isSelected ? const Color(0xFFFF7F6C) : Colors.white10),
+          border: Border.all(
+              color: _lugarSeleccionado?.id == lugar.id
+                  ? const Color(0xFFFF7F6C)
+                  : Colors.white10),
         ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -274,8 +864,11 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
             Row(
               children: [
                 Container(
-                  width: 48, height: 52,
-                  decoration: BoxDecoration(color: const Color(0xFF2E334D), borderRadius: BorderRadius.circular(10)),
+                  width: 48,
+                  height: 52,
+                  decoration: BoxDecoration(
+                      color: const Color(0xFF2E334D),
+                      borderRadius: BorderRadius.circular(10)),
                   child: Icon(lugar.icono, color: lugar.color, size: 24),
                 ),
                 const SizedBox(width: 14),
@@ -286,33 +879,55 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                       Row(
                         children: [
                           Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 6, vertical: 2),
                             decoration: BoxDecoration(
-                              color: abierto ? Colors.green.withOpacity(0.2) : Colors.red.withOpacity(0.2),
+                              color: abierto
+                                  ? Colors.green.withOpacity(0.2)
+                                  : Colors.red.withOpacity(0.2),
                               borderRadius: BorderRadius.circular(4),
-                              border: Border.all(color: abierto ? Colors.green : Colors.red, width: 0.5)
+                              border: Border.all(
+                                  color: abierto ? Colors.green : Colors.red,
+                                  width: 0.5),
                             ),
                             child: Text(
                               abierto ? 'ABIERTO' : 'CERRADO',
-                              style: TextStyle(fontSize: 9, fontWeight: FontWeight.bold, color: abierto ? Colors.greenAccent : Colors.redAccent),
+                              style: TextStyle(
+                                  fontSize: 9,
+                                  fontWeight: FontWeight.bold,
+                                  color: abierto
+                                      ? Colors.greenAccent
+                                      : Colors.redAccent),
                             ),
                           ),
                           const Spacer(),
                           if (tieneResenas && lugar.resenas.isNotEmpty) ...[
-                            const Icon(Icons.star, color: Colors.amber, size: 14),
+                            const Icon(Icons.star,
+                                color: Colors.amber, size: 14),
                             const SizedBox(width: 2),
-                            Text(lugar.puntuacionPromedio.toStringAsFixed(1), style: const TextStyle(color: Colors.amber, fontSize: 12, fontWeight: FontWeight.bold)),
-                          ]
+                            Text(
+                              '${lugar.puntuacionPromedio.toStringAsFixed(1)} (${lugar.resenas.length})',
+                              style: const TextStyle(
+                                  color: Colors.amber,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(lugar.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                      Text(lugar.nombre,
+                          style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 14,
+                              color: Colors.white)),
                     ],
                   ),
                 ),
+                const Icon(Icons.arrow_forward_ios,
+                    size: 14, color: Colors.white38),
               ],
             ),
-            
             if (lugar.descripcion.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(
@@ -322,86 +937,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                 overflow: TextOverflow.ellipsis,
               ),
             ],
-
-            if (lugar.horarios.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 8,
-                runSpacing: 4,
-                children: lugar.horarios.map((h) {
-                  return Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.access_time, size: 12, color: Colors.white38),
-                      const SizedBox(width: 4),
-                      Text('${h.dia.substring(0,3)}: ${h.apertura} - ${h.cierre}', style: const TextStyle(fontSize: 10, color: Colors.white54)),
-                    ],
-                  );
-                }).toList(),
-              )
-            ],
-
-            const Divider(color: Colors.white12, height: 20),
-            
-            // BOTONES DE ACCIÓN
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              children: [
-                TextButton.icon(
-                  onPressed: () => _copiarCoordenadas(lugar),
-                  icon: const Icon(Icons.copy, size: 16, color: Colors.blueAccent),
-                  label: const Text('Copiar', style: TextStyle(color: Colors.blueAccent, fontSize: 12)),
-                ),
-                TextButton.icon(
-                  onPressed: () {
-                    MapLauncher.showAppChooser(
-                      context: context,
-                      lat: lugar.lat,
-                      lng: lugar.lng,
-                      nombreLugar: lugar.nombre,
-                    );
-                  },
-                  icon: const Icon(Icons.directions, size: 16, color: Colors.greenAccent),
-                  label: const Text('Cómo llegar', style: TextStyle(color: Colors.greenAccent, fontSize: 12)),
-                ),
-                if (tieneResenas)
-                  TextButton.icon(
-                    onPressed: () async {
-                      final nuevaResena = await showModalBottomSheet<Resena>(
-                        context: context,
-                        isScrollControlled: true,
-                        backgroundColor: const Color(0xFF161925),
-                        shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-                        builder: (context) => ResenaModal(lugar: lugar),
-                      );
-
-                      if (nuevaResena != null) {
-                        List<Resena> resenasActualizadas = List.from(lugar.resenas)..add(nuevaResena);
-                        PuntoInteres lugarActualizado = PuntoInteres(
-                          id: lugar.id,
-                          nombre: lugar.nombre,
-                          descripcion: lugar.descripcion,
-                          lat: lugar.lat,
-                          lng: lugar.lng,
-                          iconoCode: lugar.iconoCode,
-                          colorValue: lugar.colorValue,
-                          categoria: lugar.categoria,
-                          categoriaLugar: lugar.categoriaLugar,
-                          horarios: lugar.horarios,
-                          resenas: resenasActualizadas,
-                        );
-
-                        await _storage.actualizarPunto(lugarActualizado);
-                        if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('¡Gracias por tu reseña!')));
-                      }
-                    },
-                    icon: const Icon(Icons.rate_review, size: 16, color: Color(0xFFFF7F6C)),
-                    label: const Text('Dejar Reseña', style: TextStyle(color: Color(0xFFFF7F6C), fontSize: 12)),
-                  ),
-              ],
-            )
           ],
         ),
       ),
@@ -410,7 +945,10 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
 
   Widget _buildBottomNav(BuildContext context, int currentIndex) {
     return Container(
-      decoration: const BoxDecoration(color: Color(0xFF161925), border: Border(top: BorderSide(color: Colors.white10, width: 0.5))),
+      decoration: const BoxDecoration(
+        color: Color(0xFF161925),
+        border: Border(top: BorderSide(color: Colors.white10, width: 0.5)),
+      ),
       child: BottomNavigationBar(
         backgroundColor: Colors.transparent,
         type: BottomNavigationBarType.fixed,
@@ -422,12 +960,17 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           if (index == 1) Navigator.pushReplacementNamed(context, '/colectivos');
           if (index == 2) Navigator.pushReplacementNamed(context, '/eventos');
         },
-        selectedFontSize: 11, unselectedFontSize: 11, elevation: 0,
+        selectedFontSize: 11,
+        unselectedFontSize: 11,
+        elevation: 0,
         items: const [
           BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Inicio'),
-          BottomNavigationBarItem(icon: Icon(Icons.directions_bus_outlined), label: 'Colectivos'),
-          BottomNavigationBarItem(icon: Icon(Icons.calendar_today_outlined), label: 'Eventos'),
-          BottomNavigationBarItem(icon: Icon(Icons.place_outlined), label: 'Lugares'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.directions_bus_outlined), label: 'Colectivos'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.calendar_today_outlined), label: 'Eventos'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.place_outlined), label: 'Lugares'),
         ],
       ),
     );

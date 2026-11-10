@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 import 'map_data.dart';
@@ -8,18 +7,25 @@ import 'map_storage.dart';
 import 'widgets/ruta_map.dart';
 
 class ColectivosY_Rutas extends StatefulWidget {
-  const ColectivosY_Rutas({super.key});
+  final LatLng? destinoInicial;
+  final String? nombreDestino;
+
+  const ColectivosY_Rutas({
+    super.key,
+    this.destinoInicial,
+    this.nombreDestino,
+  });
 
   @override
   State<ColectivosY_Rutas> createState() => _ColectivosY_RutasState();
 }
 
 class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
-  String lineaSeleccionada = 'Urbano'; 
-  
+  String lineaSeleccionada = 'Urbano';
+
   final MapStorage _storage = MapStorage();
   final GlobalKey<RutaMapState> _mapKey = GlobalKey<RutaMapState>();
-  
+
   List<PuntoInteres> _puntos = [];
   List<RutaColectivo> _rutas = [];
   StreamSubscription? _subPuntos;
@@ -33,18 +39,54 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
   LatLng? _paradaSubida;
   LatLng? _paradaBajada;
   bool _calculandoRuta = false;
+  bool _modoMira = false;
 
-  @override
+    @override
   void initState() {
     super.initState();
-    _obtenerUbicacionActual();
-    
+    if (widget.destinoInicial != null) {
+      _destinoTocado = widget.destinoInicial;
+      _calculandoRuta = true;
+    }
+    _inicializar();
     _subPuntos = _storage.streamPuntos().listen((data) {
       if (mounted) setState(() => _puntos = data);
     });
     _subRutas = _storage.streamRutas().listen((data) {
       if (mounted) setState(() => _rutas = data);
     });
+  }
+
+  Future<void> _inicializar() async {
+    await _obtenerUbicacionActual();
+    if (!mounted) return;
+    if (widget.destinoInicial == null) return;
+
+    if (_miUbicacion == null) {
+      setState(() => _calculandoRuta = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Necesitamos tu ubicación GPS para calcular los colectivos'),
+        ),
+      );
+      return;
+    }
+
+    if (widget.nombreDestino != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              '🚌 Buscando colectivos para ${widget.nombreDestino}...'),
+          duration: const Duration(seconds: 2),
+        ),
+      );
+    }
+
+    // Pequeño delay para que la UI se renderice antes del modal
+    await Future.delayed(const Duration(milliseconds: 400));
+    if (!mounted) return;
+    _analizarDestino(widget.destinoInicial!);
   }
 
   @override
@@ -61,39 +103,11 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
         permiso = await Geolocator.requestPermission();
       }
       if (permiso == LocationPermission.denied || permiso == LocationPermission.deniedForever) return;
-
-      final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
-      setState(() {
-        _miUbicacion = LatLng(pos.latitude, pos.longitude);
-      });
+            final pos = await Geolocator.getCurrentPosition(desiredAccuracy: LocationAccuracy.high);
+      if (!mounted) return;
+      setState(() => _miUbicacion = LatLng(pos.latitude, pos.longitude));
     } catch (e) {
-      print("Error GPS: $e");
-    }
-  }
-
-  Future<void> _pegarYBuscar() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    
-    if (data == null || data.text == null || data.text!.isEmpty) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay coordenadas en el portapapeles')));
-      return;
-    }
-
-    try {
-      final partes = data.text!.split(',');
-      if (partes.length == 2) {
-        final lat = double.parse(partes[0].trim());
-        final lng = double.parse(partes[1].trim());
-        _analizarDestino(LatLng(lat, lng));
-      } else {
-        throw FormatException();
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('El texto copiado no tiene el formato correcto (Lat, Lng)')),
-        );
-      }
+      debugPrint("Error GPS: $e");
     }
   }
 
@@ -102,7 +116,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Necesitamos tu ubicación GPS para calcular')));
       return;
     }
-
     setState(() {
       _destinoTocado = destino;
       _calculandoRuta = true;
@@ -110,118 +123,204 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       _paradaSubida = null;
       _paradaBajada = null;
       _paradasCercanasAlDestino.clear();
+      _modoMira = false;
     });
 
     const Distance dist = Distance();
     List<Map<String, dynamic>> resultados = [];
 
     for (var ruta in _rutas) {
-      LatLng? mejorBajada;
-      double minDistDestino = double.infinity;
-
-      LatLng? mejorSubida;
+      int indexSubida = -1;
       double minDistOrigen = double.infinity;
-
-      for (var parada in ruta.paradas) {
-        double dDestino = dist.as(LengthUnit.Meter, parada, destino);
-        if (dDestino < minDistDestino) {
-          minDistDestino = dDestino;
-          mejorBajada = parada;
-        }
-
-        double dOrigen = dist.as(LengthUnit.Meter, parada, _miUbicacion!);
-        if (dOrigen < minDistOrigen) {
-          minDistOrigen = dOrigen;
-          mejorSubida = parada;
+      for (int i = 0; i < ruta.paradas.length; i++) {
+        double d = dist.as(LengthUnit.Meter, ruta.paradas[i], _miUbicacion!);
+        if (d < minDistOrigen) {
+          minDistOrigen = d;
+          indexSubida = i;
         }
       }
-
-      if (mejorBajada != null && minDistDestino <= 500) {
+      int indexBajada = -1;
+      double minDistDestino = double.infinity;
+      if (indexSubida != -1) {
+        for (int i = indexSubida + 1; i < ruta.paradas.length; i++) {
+          double d = dist.as(LengthUnit.Meter, ruta.paradas[i], destino);
+          if (d < minDistDestino) {
+            minDistDestino = d;
+            indexBajada = i;
+          }
+        }
+      }
+      if (indexBajada != -1 && minDistDestino <= 500) {
+        LatLng paradaSubida = ruta.paradas[indexSubida];
+        LatLng paradaBajada = ruta.paradas[indexBajada];
         resultados.add({
           'ruta': ruta,
-          'paradaSubida': mejorSubida,
+          'paradaSubida': paradaSubida,
           'distanciaSubida': minDistOrigen,
-          'paradaBajada': mejorBajada,
+          'paradaBajada': paradaBajada,
           'distanciaBajada': minDistDestino,
+          'sentido': 'Hacia el final de la línea',
         });
-        
-        if (!_paradasCercanasAlDestino.contains(mejorBajada)) {
-          _paradasCercanasAlDestino.add(mejorBajada);
+        if (!_paradasCercanasAlDestino.contains(paradaBajada)) {
+          _paradasCercanasAlDestino.add(paradaBajada);
         }
       }
     }
 
     resultados.sort((a, b) => (a['distanciaSubida'] as double).compareTo(b['distanciaSubida'] as double));
-
-    setState(() {
-      _calculandoRuta = false;
-    });
+    setState(() => _calculandoRuta = false);
 
     if (resultados.isNotEmpty) {
       _mostrarPanelResultados(resultados);
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay colectivos pasando a 500m de este punto')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('No hay colectivos que te sirvan para ese viaje')));
     }
   }
 
-  void _mostrarPanelResultados(List<Map<String, dynamic>> rutasCercanas) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: const Color(0xFF1E2235),
-      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (context) {
-        return Container(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text('Colectivos para este viaje', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
-              const SizedBox(height: 5),
-              const Text('Tocá una línea para ver el recorrido completo', style: TextStyle(color: Colors.white54, fontSize: 12)),
-              const Divider(color: Colors.white24),
-              ...rutasCercanas.map((item) {
-                final ruta = item['ruta'] as RutaColectivo;
-                final paradaSubida = item['paradaSubida'] as LatLng;
-                final distSubida = item['distanciaSubida'] as double;
-                final paradaBajada = item['paradaBajada'] as LatLng;
-                final distBajada = item['distanciaBajada'] as double;
+ void _mostrarPanelResultados(List<Map<String, dynamic>> rutasCercanas) {
+  showModalBottomSheet(
+    context: context,
+    isScrollControlled: true, // ← permite que el sheet crezca más del 50%
+    backgroundColor: const Color(0xFF1E2235),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) {
+      return ConstrainedBox(
+        constraints: BoxConstraints(
+          maxHeight: MediaQuery.of(context).size.height * 0.5,
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // Drag handle visual (la rayita para arrastrar)
+            Center(
+              child: Container(
+                margin: const EdgeInsets.only(top: 10, bottom: 8),
+                width: 40,
+                height: 5,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+              ),
+            ),
 
-                return ListTile(
-                  leading: Icon(Icons.directions_bus, color: ruta.color),
-                  title: Text(ruta.nombre, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
-                  subtitle: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text('Sube a ${distSubida.toStringAsFixed(0)}m de ti', style: const TextStyle(color: Colors.greenAccent, fontSize: 11)),
-                      Text('Baja a ${distBajada.toStringAsFixed(0)}m del destino', style: const TextStyle(color: Colors.orangeAccent, fontSize: 11)),
-                    ],
-                  ),
-                  trailing: const Icon(Icons.arrow_forward_ios, size: 14, color: Colors.white38),
-                  onTap: () {
-                    Navigator.pop(context);
-                    setState(() {
-                      _rutaSeleccionada = ruta;
-                      _paradaSubida = paradaSubida;
-                      _paradaBajada = paradaBajada;
-                    });
-                  },
-                );
-              }).toList(),
-            ],
-          ),
-        );
-      }
-    );
-  }
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                rutasCercanas.length == 1
+                    ? '1 línea te sirve'
+                    : '${rutasCercanas.length} líneas te sirven',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+            const SizedBox(height: 4),
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: 16),
+              child: Text(
+                'Tocá una línea para ver el recorrido completo',
+                style: TextStyle(color: Colors.white54, fontSize: 12),
+              ),
+            ),
+            const SizedBox(height: 8),
+            const Divider(color: Colors.white24, height: 1),
+
+            // ← clave: Flexible + ListView.builder con shrinkWrap
+            Flexible(
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.only(bottom: 16),
+                itemCount: rutasCercanas.length,
+                itemBuilder: (context, index) {
+                  final item = rutasCercanas[index];
+                  final ruta = item['ruta'] as RutaColectivo;
+                  final distSubida = item['distanciaSubida'] as double;
+                  final distBajada = item['distanciaBajada'] as double;
+                  final sentido = item['sentido'] as String;
+
+                  return ListTile(
+                    leading: Icon(Icons.directions_bus, color: ruta.color),
+                    title: Text(
+                      ruta.nombre,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    subtitle: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        if (ruta.empresa.isNotEmpty)
+                          Text(
+                            ruta.empresa,
+                            style: const TextStyle(
+                              color: Color(0xFFFF7F6C),
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        Text(
+                          'Sube a ${distSubida.toStringAsFixed(0)}m de ti',
+                          style: const TextStyle(
+                            color: Colors.greenAccent,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          'Baja a ${distBajada.toStringAsFixed(0)}m del destino',
+                          style: const TextStyle(
+                            color: Colors.orangeAccent,
+                            fontSize: 11,
+                          ),
+                        ),
+                        Text(
+                          sentido,
+                          style: const TextStyle(
+                            color: Colors.white54,
+                            fontSize: 10,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                      ],
+                    ),
+                    trailing: const Icon(
+                      Icons.arrow_forward_ios,
+                      size: 14,
+                      color: Colors.white38,
+                    ),
+                    onTap: () {
+                      Navigator.pop(context);
+                      setState(() {
+                        _rutaSeleccionada = ruta;
+                        _paradaSubida = item['paradaSubida'];
+                        _paradaBajada = item['paradaBajada'];
+                      });
+                    },
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      );
+    },
+  );
+}
 
   void _limpiarSeleccion() {
     setState(() {
       _destinoTocado = null;
-      _paradaSubida = null; 
-      _paradaBajada = null; 
+      _paradaSubida = null;
+      _paradaBajada = null;
       _rutaSeleccionada = null;
       _paradasCercanasAlDestino.clear();
+      _modoMira = false;
     });
   }
 
@@ -236,16 +335,11 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
         elevation: 0,
         title: const Text('Colectivos y rutas', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
         actions: [
-          IconButton(
-            icon: const Icon(Icons.content_paste, color: Color(0xFFFF7F6C)),
-            tooltip: 'Pegar coordenadas de destino',
-            onPressed: _pegarYBuscar,
-          ),
           if (_destinoTocado != null || _rutaSeleccionada != null)
             IconButton(
               icon: const Icon(Icons.close, color: Colors.white),
               onPressed: _limpiarSeleccion,
-            )
+            ),
         ],
       ),
       body: Column(
@@ -261,7 +355,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                   RutaMap(
                     key: _mapKey,
                     mostrarRutas: true,
-                    mostrarColectivos: false, 
+                    mostrarColectivos: false,
                     mostrarEventos: false,
                     mostrarLugares: false,
                     puntos: _puntos,
@@ -269,40 +363,90 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                     destinoSeleccionado: _destinoTocado,
                     paradasCercanas: _paradasCercanasAlDestino,
                     paradaSubida: _paradaSubida,
-                    paradaBajada: _paradaBajada, 
-                    modoAgregarPunto: true, 
-                    onMapTap: (punto) => _analizarDestino(punto),
+                    paradaBajada: _paradaBajada,
+                    modoAgregarPunto: false,
                   ),
-                  
                   if (_calculandoRuta)
                     const Center(child: CircularProgressIndicator(color: Color(0xFFFF7F6C))),
-
-                  if (_destinoTocado == null && !_calculandoRuta)
-                    const Positioned(
-                      top: 10, left: 0, right: 0,
-                      child: Center(
-                        child: Text('Tocá el mapa o pegá coordenadas para buscar', style: TextStyle(color: Colors.black54, fontSize: 11, fontWeight: FontWeight.bold)),
+                  if (_modoMira)
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Center(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(Icons.add, size: 40, color: Colors.blueAccent, shadows: [Shadow(color: Colors.white, blurRadius: 4)]),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(4)),
+                                child: const Text('Elegí tu destino', style: TextStyle(color: Colors.black, fontSize: 10, fontWeight: FontWeight.bold)),
+                              ),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
-
-                  Positioned(
-                    bottom: 12, right: 12,
-                    child: GestureDetector(
-                      onTap: () { _obtenerUbicacionActual(); _mapKey.currentState?.centrarEnMiUbicacion(); },
-                      child: const CircleAvatar(radius: 16, backgroundColor: Color(0xFFFF7F6C), child: Icon(Icons.my_location, size: 16, color: Color(0xFF131622))),
+                  if (!_modoMira && _destinoTocado == null && !_calculandoRuta)
+                    Positioned(
+                      bottom: 16,
+                      left: 0,
+                      right: 0,
+                      child: Center(
+                        child: ElevatedButton.icon(
+                          onPressed: () => setState(() => _modoMira = true),
+                          icon: const Icon(Icons.gps_fixed, size: 18),
+                          label: const Text('¿A dónde querés ir?'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFFF7F6C),
+                            foregroundColor: const Color(0xFF131622),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                            elevation: 4,
+                          ),
+                        ),
+                      ),
                     ),
-                  ),
+                  if (_modoMira)
+                    Positioned(
+                      bottom: 16,
+                      left: 0,
+                      right: 0,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          ElevatedButton(
+                            onPressed: () => setState(() => _modoMira = false),
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey[800]),
+                            child: const Text('Cancelar', style: TextStyle(color: Colors.white)),
+                          ),
+                          const SizedBox(width: 10),
+                          ElevatedButton(
+                            onPressed: () {
+                              final centro = _mapKey.currentState?.getCentroActual();
+                              if (centro != null) _analizarDestino(centro);
+                            },
+                            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                            child: const Text('Confirmar', style: TextStyle(color: Colors.white)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (!_modoMira)
+                    Positioned(
+                      bottom: 12, right: 12,
+                      child: GestureDetector(
+                        onTap: () { _obtenerUbicacionActual(); _mapKey.currentState?.centrarEnMiUbicacion(); },
+                        child: const CircleAvatar(radius: 16, backgroundColor: Color(0xFFFF7F6C), child: Icon(Icons.my_location, size: 16, color: Color(0xFF131622))),
+                      ),
+                    ),
                 ],
               ),
             ),
           ),
           const SizedBox(height: 16),
-
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
             child: Container(
               height: 44,
-              // DISEÑO NUEVO DE LA RAMA MAIN (BorderRadius 30)
               decoration: BoxDecoration(color: const Color(0xFF1E2235), borderRadius: BorderRadius.circular(30)),
               child: Row(
                 children: [
@@ -331,7 +475,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
             ),
           ),
           const SizedBox(height: 10),
-
           Expanded(
             child: rutasDeLaPestana.isEmpty
                 ? const Center(child: Text('No hay líneas guardadas', style: TextStyle(color: Colors.white38)))
@@ -341,7 +484,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                     itemBuilder: (context, index) {
                       final ruta = rutasDeLaPestana[index];
                       bool isSelected = _rutaSeleccionada?.id == ruta.id;
-                      
                       return GestureDetector(
                         onTap: () {
                           setState(() {
@@ -352,6 +494,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                               _destinoTocado = null;
                               _paradaSubida = null;
                               _paradaBajada = null;
+                              _modoMira = false;
                             }
                           });
                         },
@@ -365,10 +508,9 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                           ),
                           child: Row(
                             children: [
-                              // NUEVOS LOGOS DE LA RAMA MAIN
                               Image.asset(
-                                ruta.categoriaRuta == 'urbano' 
-                                    ? 'assets/urbanologo.png' 
+                                ruta.categoriaRuta == 'urbano'
+                                    ? 'assets/urbanologo.png'
                                     : 'assets/santa_logo.png',
                                 width: 40,
                                 height: 40,
@@ -376,7 +518,17 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                               ),
                               const SizedBox(width: 14),
                               Expanded(
-                                child: Text(ruta.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(ruta.nombre, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.white)),
+                                    if (ruta.empresa.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 2),
+                                        child: Text(ruta.empresa, style: const TextStyle(fontSize: 11, color: Color(0xFFFF7F6C))),
+                                      ),
+                                  ],
+                                ),
                               ),
                               if (isSelected) const Icon(Icons.check_circle, color: Color(0xFFFF7F6C), size: 20),
                             ],

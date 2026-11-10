@@ -4,13 +4,13 @@ import 'map_data.dart';
 class MapStorage {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // ─── STREAMS (Para escuchar cambios en tiempo real) ───
+  // ─── STREAMS ───
 
   Stream<List<PuntoInteres>> streamPuntos() {
     return _db.collection('puntos').snapshots().map((snapshot) {
       return snapshot.docs.map((doc) {
         final data = doc.data();
-        data['id'] = doc.id; 
+        data['id'] = doc.id;
         return PuntoInteres.fromJson(data);
       }).toList();
     });
@@ -30,22 +30,43 @@ class MapStorage {
 
   Future<void> guardarPunto(PuntoInteres punto) async {
     final data = punto.toJson();
-    data.remove('id'); 
+    data.remove('id');
     await _db.collection('puntos').add(data);
   }
 
   Future<void> guardarRuta(RutaColectivo ruta) async {
     final data = ruta.toJson();
-    data.remove('id'); 
+    data.remove('id');
     await _db.collection('rutas').add(data);
   }
 
-  // ─── ACTUALIZAR (Para agregar reseñas) ───
+  /// NUEVO: guarda muchas rutas de una sola vez (más rápido que 57 writes).
+  Future<void> guardarRutasBatch(List<RutaColectivo> rutas) async {
+    if (rutas.isEmpty) return;
+    final batch = _db.batch();
+    for (var ruta in rutas) {
+      final data = ruta.toJson();
+      data.remove('id');
+      final doc = _db.collection('rutas').doc();
+      batch.set(doc, data);
+    }
+    await batch.commit();
+  }
+
+  // ─── ACTUALIZAR ───
+
   Future<void> actualizarPunto(PuntoInteres punto) async {
     final data = punto.toJson();
-    data.remove('id'); 
-    // Actualizamos el documento específico usando su ID
+    data.remove('id');
     await _db.collection('puntos').doc(punto.id).update(data);
+  }
+
+  /// NUEVO: editar una ruta existente (nombre, empresa, color, etc.)
+  Future<void> actualizarRuta(RutaColectivo ruta) async {
+    if (ruta.id.isEmpty) return guardarRuta(ruta);
+    final data = ruta.toJson();
+    data.remove('id');
+    await _db.collection('rutas').doc(ruta.id).set(data, SetOptions(merge: true));
   }
 
   // ─── ELIMINAR ───

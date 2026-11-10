@@ -63,6 +63,49 @@ class _LoginScreenState extends State<LoginScreen> {
       if (mounted) setState(() => _isLoading = false);
     }
   }
+    Future<void> _recuperarPassword() async {
+    final email = _emailController.text.trim();
+
+    if (email.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+              'Primero escribí tu email arriba. Después tocá de nuevo.'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+                '📧 Te enviamos un correo a $email con instrucciones. Revisá tu bandeja (y el spam).'),
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      String mensaje = 'No pudimos enviar el correo';
+      if (e.code == 'user-not-found') {
+        mensaje = 'No existe una cuenta con ese email';
+      } else if (e.code == 'invalid-email') {
+        mensaje = 'El email no es válido';
+      }
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(mensaje)),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -191,12 +234,18 @@ class _LoginScreenState extends State<LoginScreen> {
                     const SizedBox(height: 12),
 
                     // ¿Olvidaste tu contraseña?
-                    Align(
+                                        Align(
                       alignment: Alignment.centerRight,
                       child: TextButton(
-                        onPressed: () {}, // Lo dejamos vacío por ahora como pediste
-                        style: TextButton.styleFrom(padding: EdgeInsets.zero, minimumSize: Size.zero, tapTargetSize: MaterialTapTargetSize.shrinkWrap),
-                        child: const Text('¿Olvidaste tu contraseña?', style: TextStyle(color: Colors.white54, fontSize: 12)),
+                        onPressed: _isLoading ? null : _recuperarPassword,
+                        style: TextButton.styleFrom(
+                          padding: EdgeInsets.zero,
+                          minimumSize: Size.zero,
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                        ),
+                        child: const Text('¿Olvidaste tu contraseña?',
+                            style: TextStyle(
+                                color: Colors.white54, fontSize: 12)),
                       ),
                     ),
                     const SizedBox(height: 30),

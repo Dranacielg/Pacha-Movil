@@ -3,9 +3,9 @@ import 'package:latlong2/latlong.dart';
 
 // ─── CLASE HORARIO ───
 class HorarioAtencion {
-  final String dia; // 'Lunes', 'Martes', etc.
-  final String apertura; // '08:00'
-  final String cierre; // '20:00'
+  final String dia;
+  final String apertura;
+  final String cierre;
 
   HorarioAtencion({
     required this.dia,
@@ -30,9 +30,10 @@ class HorarioAtencion {
 class Resena {
   final String usuario;
   final String comentario;
-  final double estetica; // 1 a 5
-  final double atencion; // 1 a 5
-  final double servicios; // 1 a 5
+  final double estetica;
+  final double atencion;
+  final double servicios;
+  final int? fecha; // milisegundos desde epoch; null en reseñas viejas
 
   Resena({
     required this.usuario,
@@ -40,6 +41,7 @@ class Resena {
     required this.estetica,
     required this.atencion,
     required this.servicios,
+    this.fecha,
   });
 
   double get promedio => (estetica + atencion + servicios) / 3;
@@ -50,6 +52,7 @@ class Resena {
         'estetica': estetica,
         'atencion': atencion,
         'servicios': servicios,
+        'fecha': fecha,
       };
 
   factory Resena.fromJson(Map<String, dynamic> json) => Resena(
@@ -58,6 +61,7 @@ class Resena {
         estetica: (json['estetica'] as num).toDouble(),
         atencion: (json['atencion'] as num).toDouble(),
         servicios: (json['servicios'] as num).toDouble(),
+        fecha: (json['fecha'] as num?)?.toInt(),
       );
 }
 
@@ -70,13 +74,10 @@ class PuntoInteres {
   final double lng;
   final int iconoCode;
   final int colorValue;
-  final String categoria; 
-  
-  final String categoriaLugar; 
+  final String categoria;
+  final String categoriaLugar;
   final List<HorarioAtencion> horarios;
   final List<Resena> resenas;
-
-  // CAMPOS PARA EVENTOS (Milisegundos para Firestore)
   final int? fechaInicio;
   final int? fechaFin;
 
@@ -132,11 +133,11 @@ class PuntoInteres {
         colorValue: json['colorValue'],
         categoria: json['categoria'] ?? 'lugar',
         categoriaLugar: json['categoriaLugar'] ?? '',
-        horarios: json['horarios'] != null 
-            ? (json['horarios'] as List).map((h) => HorarioAtencion.fromJson(h)).toList() 
+        horarios: json['horarios'] != null
+            ? (json['horarios'] as List).map((h) => HorarioAtencion.fromJson(h)).toList()
             : [],
-        resenas: json['resenas'] != null 
-            ? (json['resenas'] as List).map((r) => Resena.fromJson(r)).toList() 
+        resenas: json['resenas'] != null
+            ? (json['resenas'] as List).map((r) => Resena.fromJson(r)).toList()
             : [],
         fechaInicio: json['fechaInicio'],
         fechaFin: json['fechaFin'],
@@ -152,6 +153,10 @@ class RutaColectivo {
   final int colorValue;
   final String categoriaRuta;
 
+  /// NUEVO: empresa real (El Urbano, Santa Ana, Xibi-Xibi...)
+  /// Puede quedar vacía en rutas viejas o manuales.
+  final String empresa;
+
   RutaColectivo({
     required this.id,
     required this.nombre,
@@ -159,6 +164,7 @@ class RutaColectivo {
     required this.paradas,
     required this.colorValue,
     required this.categoriaRuta,
+    this.empresa = '',
   });
 
   Color get color => Color(colorValue);
@@ -168,6 +174,7 @@ class RutaColectivo {
         'nombre': nombre,
         'colorValue': colorValue,
         'categoriaRuta': categoriaRuta,
+        'empresa': empresa,
         'puntosTrazo': puntosTrazo.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
         'paradas': paradas.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
       };
@@ -177,7 +184,28 @@ class RutaColectivo {
         nombre: json['nombre'],
         colorValue: json['colorValue'],
         categoriaRuta: json['categoriaRuta'] ?? 'urbano',
+        empresa: json['empresa'] ?? '',
         puntosTrazo: (json['puntosTrazo'] as List).map((p) => LatLng(p['lat'], p['lng'])).toList(),
         paradas: (json['paradas'] as List).map((p) => LatLng(p['lat'], p['lng'])).toList(),
       );
+
+  RutaColectivo copyWith({
+    String? id,
+    String? nombre,
+    List<LatLng>? puntosTrazo,
+    List<LatLng>? paradas,
+    int? colorValue,
+    String? categoriaRuta,
+    String? empresa,
+  }) {
+    return RutaColectivo(
+      id: id ?? this.id,
+      nombre: nombre ?? this.nombre,
+      puntosTrazo: puntosTrazo ?? this.puntosTrazo,
+      paradas: paradas ?? this.paradas,
+      colorValue: colorValue ?? this.colorValue,
+      categoriaRuta: categoriaRuta ?? this.categoriaRuta,
+      empresa: empresa ?? this.empresa,
+    );
+  }
 }

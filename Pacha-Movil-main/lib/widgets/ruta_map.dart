@@ -98,6 +98,10 @@ class RutaMapState extends State<RutaMap> {
   void moverCamara(LatLng punto, double zoom) {
     _mapController.move(punto, zoom);
   }
+    // Método para obtener las coordenadas del centro actual del mapa
+  LatLng getCentroActual() {
+    return _mapController.camera.center;
+  }
 
   @override
   Widget build(BuildContext context) {

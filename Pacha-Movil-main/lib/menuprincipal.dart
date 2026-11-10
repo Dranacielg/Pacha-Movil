@@ -10,7 +10,28 @@ class MenuPrincipal extends StatefulWidget {
 
 class _MenuPrincipalState extends State<MenuPrincipal> {
   int _currentIndex = 0;
+  
+  String get _nombreUsuario {
+    final user = FirebaseAuth.instance.currentUser;
 
+    // 1. Admin siempre dice "Admin"
+    if (user?.email == 'admin@pacha.com') return 'Admin';
+
+    // 2. Si tiene displayName, usamos el primer nombre
+    final nombre = user?.displayName?.trim();
+    if (nombre != null && nombre.isNotEmpty) {
+      return nombre.split(' ').first;
+    }
+
+    // 3. Fallback: lo que está antes del @ del email
+    final email = user?.email;
+    if (email != null && email.contains('@')) {
+      return email.split('@').first;
+    }
+
+    // 4. Último recurso (no debería pasar si hay sesión)
+    return 'vecino';
+  }
   void _onItemTapped(int index) {
     setState(() {
       _currentIndex = index;
@@ -65,15 +86,26 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+                            const SizedBox(height: 16),
               const Text(
                 'QUE PA CHA EN JUJUY?',
-                style: TextStyle(fontSize: 11, color: Colors.white38, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    fontSize: 11,
+                    color: Colors.white38,
+                    fontWeight: FontWeight.w600),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Hola, $_nombreUsuario 👋',
+                style: const TextStyle(
+                    fontSize: 26,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white),
               ),
               const SizedBox(height: 4),
               const Text(
                 '¿Qué pinta hacer hoy?',
-                style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: Colors.white),
+                style: TextStyle(fontSize: 14, color: Colors.white60),
               ),
               const SizedBox(height: 20),
 
