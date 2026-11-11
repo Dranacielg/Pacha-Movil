@@ -74,7 +74,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     }
   }
 
-  // ─── Abierto / cerrado ───
   bool _estaAbierto(PuntoInteres lugar) {
     if (lugar.horarios.isEmpty) return true;
     final now = DateTime.now();
@@ -116,19 +115,17 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     return false;
   }
 
-  // ─── Reseñas ordenadas ───
   List<Resena> _resenasOrdenadas(List<Resena> resenas) {
     final copia = List<Resena>.from(resenas);
     copia.sort((a, b) {
       final fa = a.fecha ?? 0;
       final fb = b.fecha ?? 0;
-      return fb.compareTo(fa); // más nuevas primero
+      return fb.compareTo(fa);
     });
     return copia;
   }
 
-  // ─── Copiar / compartir ───
-   void _irAColectivos(PuntoInteres lugar) {
+  void _irAColectivos(PuntoInteres lugar) {
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -140,20 +137,22 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     );
   }
 
-  // ─── Dejar reseña ───
-  Future<Resena?> _crearResena(PuntoInteres lugar) async {
+  Future<Resena?> _crearResena(PuntoInteres lugar,
+      {Resena? existente}) async {
     final nueva = await showModalBottomSheet<Resena>(
       context: context,
       isScrollControlled: true,
       backgroundColor: const Color(0xFF161925),
       shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
-      builder: (ctx) => ResenaModal(lugar: lugar),
+      builder: (ctx) => ResenaModal(lugar: lugar, existente: existente),
     );
     if (nueva == null) return null;
-    // Le agregamos la fecha porque ResenaModal no la conoce
+    final user = FirebaseAuth.instance.currentUser;
+    final userId = user?.uid ?? user?.email ?? '';
     return Resena(
       usuario: nueva.usuario,
+      usuarioId: userId,
       comentario: nueva.comentario,
       estetica: nueva.estetica,
       atencion: nueva.atencion,
@@ -162,20 +161,36 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     );
   }
 
-  Future<void> _guardarResena(
+  Future<PuntoInteres> _guardarResena(
       PuntoInteres lugar, Resena resena, StateSetter setSheetState) async {
-    final actualizadas = [...lugar.resenas, resena];
+    final actualizadas = List<Resena>.from(lugar.resenas);
+
+    final index = actualizadas.indexWhere(
+      (r) => r.usuarioId.isNotEmpty && r.usuarioId == resena.usuarioId,
+    );
+    final esEdicion = index >= 0;
+    if (esEdicion) {
+      actualizadas[index] = resena;
+    } else {
+      actualizadas.add(resena);
+    }
+
     final lugarActualizado = _clonarLugar(lugar, resenas: actualizadas);
     await _storage.actualizarPunto(lugarActualizado);
     setSheetState(() {});
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('¡Gracias por tu reseña!')),
+        SnackBar(
+          content: Text(esEdicion
+              ? '✏️ Tu reseña fue actualizada'
+              : '¡Gracias por tu reseña!'),
+        ),
       );
     }
+    return lugarActualizado;
   }
 
-  Future<void> _eliminarResena(
+  Future<PuntoInteres?> _eliminarResena(
       PuntoInteres lugar, Resena resena, StateSetter setSheetState) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -200,7 +215,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
         ],
       ),
     );
-    if (ok != true) return;
+    if (ok != true) return null;
 
     final actualizadas = lugar.resenas.where((r) => r != resena).toList();
     final lugarActualizado = _clonarLugar(lugar, resenas: actualizadas);
@@ -211,6 +226,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
         const SnackBar(content: Text('🗑️ Reseña eliminada')),
       );
     }
+    return lugarActualizado;
   }
 
   PuntoInteres _clonarLugar(PuntoInteres l, {List<Resena>? resenas}) {
@@ -232,15 +248,12 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
   }
 
   bool _puedeEliminarResena(Resena r) {
-    final email = FirebaseAuth.instance.currentUser?.email;
-    if (email == null) return false;
-    if (email == 'admin@pacha.com') return true;
-    return r.usuario == email;
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return false;
+    if (user.email == 'admin@pacha.com') return true;
+    return r.usuarioId.isNotEmpty && r.usuarioId == user.uid;
   }
 
-  // ══════════════════════════════════════════
-  // BOTTOM SHEET DE DETALLE
-  // ══════════════════════════════════════════
   void _mostrarDetalleLugar(PuntoInteres lugar) {
     setState(() => _lugarSeleccionado = lugar);
     _mapKey.currentState?.moverCamara(lugar.punto, 16);
@@ -262,15 +275,27 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
               color: Color(0xFF161925),
               borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
             ),
-            child: _buildDetalleLugar(lugarLocal, scrollCtrl, setSheetState),
+            child: _buildDetalleLugar(
+              lugarLocal,
+              scrollCtrl,
+              setSheetState,
+              onLugarActualizado: (nuevo) {
+                lugarLocal = nuevo;
+                setSheetState(() {});
+              },
+            ),
           ),
         ),
       ),
     );
   }
 
-  Widget _buildDetalleLugar(PuntoInteres lugar, ScrollController scrollCtrl,
-      StateSetter setSheetState) {
+  Widget _buildDetalleLugar(
+    PuntoInteres lugar,
+    ScrollController scrollCtrl,
+    StateSetter setSheetState, {
+    ValueChanged<PuntoInteres>? onLugarActualizado,
+  }) {
     final abierto = _estaAbierto(lugar);
     final resenasOrd = _resenasOrdenadas(lugar.resenas);
     final puedeResenar = _permiteResenas(lugar.categoriaLugar);
@@ -279,7 +304,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
       controller: scrollCtrl,
       padding: const EdgeInsets.all(16),
       children: [
-        // Handle
         Center(
           child: Container(
             width: 40,
@@ -292,7 +316,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
         ),
         const SizedBox(height: 16),
 
-        // Header
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -359,7 +382,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ],
         ),
 
-        // Rating
         if (lugar.resenas.isNotEmpty) ...[
           const SizedBox(height: 16),
           Row(
@@ -382,7 +404,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
         ],
 
-        // Descripción
         if (lugar.descripcion.isNotEmpty) ...[
           const SizedBox(height: 16),
           Text(
@@ -392,7 +413,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
         ],
 
-        // Horarios
         if (lugar.horarios.isNotEmpty) ...[
           const SizedBox(height: 20),
           const Text('HORARIOS',
@@ -426,12 +446,11 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
 
         const SizedBox(height: 20),
 
-        // Acciones
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-                        OutlinedButton.icon(
+            OutlinedButton.icon(
               onPressed: () => _irAColectivos(lugar),
               icon: const Icon(Icons.directions_bus,
                   size: 16, color: Colors.teal),
@@ -461,37 +480,49 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
               ),
             ),
             if (puedeResenar)
-              OutlinedButton.icon(
-                onPressed: () async {
-                  final nueva = await _crearResena(lugar);
-                  if (nueva == null) return;
-                  await _guardarResena(lugar, nueva, setSheetState);
-                  // Refrescar el lugar local con la nueva reseña
-                  final refrescado = _todosLosPuntos.firstWhere(
-                      (p) => p.id == lugar.id,
-                      orElse: () => lugar);
-                  setSheetState(() {});
-                  // Actualizamos el local manualmente
-                  // (el stream de Firestore ya actualiza el global,
-                  //  pero el bottom sheet necesita el objeto local)
-                },
-                icon: const Icon(Icons.rate_review,
-                    size: 16, color: Color(0xFFFF7F6C)),
-                label: const Text('Dejar reseña',
-                    style: TextStyle(
-                        color: Color(0xFFFF7F6C), fontSize: 12)),
-                style: OutlinedButton.styleFrom(
-                  side: const BorderSide(color: Color(0xFFFF7F6C)),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-              ),
+              Builder(builder: (_) {
+                final user = FirebaseAuth.instance.currentUser;
+                final userId = user?.uid ?? user?.email ?? '';
+                Resena? miResena;
+                for (final r in lugar.resenas) {
+                  if (r.usuarioId.isNotEmpty && r.usuarioId == userId) {
+                    miResena = r;
+                    break;
+                  }
+                }
+
+                final esEdicion = miResena != null;
+                return OutlinedButton.icon(
+                  onPressed: () async {
+                    final nueva =
+                        await _crearResena(lugar, existente: miResena);
+                    if (nueva == null) return;
+                    final actualizado =
+                        await _guardarResena(lugar, nueva, setSheetState);
+                    onLugarActualizado?.call(actualizado);
+                  },
+                  icon: Icon(
+                    esEdicion ? Icons.edit : Icons.rate_review,
+                    size: 16,
+                    color: const Color(0xFFFF7F6C),
+                  ),
+                  label: Text(
+                    esEdicion ? 'Editar mi reseña' : 'Dejar reseña',
+                    style: const TextStyle(
+                        color: Color(0xFFFF7F6C), fontSize: 12),
+                  ),
+                  style: OutlinedButton.styleFrom(
+                    side: const BorderSide(color: Color(0xFFFF7F6C)),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 8),
+                  ),
+                );
+              }),
           ],
         ),
 
         const SizedBox(height: 20),
 
-        // Sección reseñas
         if (puedeResenar) ...[
           const Divider(color: Colors.white12),
           const SizedBox(height: 12),
@@ -533,7 +564,10 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
               ),
             )
           else
-            ...resenasOrd.map((r) => _buildResenaCard(r, lugar, setSheetState)),
+            ...resenasOrd.map((r) => _buildResenaCard(
+                  r, lugar, setSheetState,
+                  onLugarActualizado: onLugarActualizado,
+                )),
         ],
         const SizedBox(height: 16),
       ],
@@ -541,7 +575,8 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
   }
 
   Widget _buildResenaCard(
-      Resena r, PuntoInteres lugar, StateSetter setSheetState) {
+      Resena r, PuntoInteres lugar, StateSetter setSheetState,
+      {ValueChanged<PuntoInteres>? onLugarActualizado}) {
     final puedeBorrar = _puedeEliminarResena(r);
     final fechaStr = r.fecha != null ? _formatearFechaResena(r.fecha!) : '';
 
@@ -562,9 +597,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                 radius: 14,
                 backgroundColor: const Color(0xFF2E334D),
                 child: Text(
-                  r.usuario.isNotEmpty
-                      ? r.usuario[0].toUpperCase()
-                      : '?',
+                  r.usuario.isNotEmpty ? r.usuario[0].toUpperCase() : '?',
                   style: const TextStyle(
                       color: Color(0xFFFF7F6C),
                       fontSize: 12,
@@ -585,7 +618,8 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                     ),
                     Row(
                       children: [
-                        const Icon(Icons.star, color: Colors.amber, size: 12),
+                        const Icon(Icons.star,
+                            color: Colors.amber, size: 12),
                         const SizedBox(width: 2),
                         Text(
                           r.promedio.toStringAsFixed(1),
@@ -610,9 +644,13 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                   icon: const Icon(Icons.more_vert,
                       color: Colors.white38, size: 18),
                   padding: EdgeInsets.zero,
-                  onSelected: (v) {
+                  onSelected: (v) async {
                     if (v == 'del') {
-                      _eliminarResena(lugar, r, setSheetState);
+                      final actualizado =
+                          await _eliminarResena(lugar, r, setSheetState);
+                      if (actualizado != null) {
+                        onLugarActualizado?.call(actualizado);
+                      }
                     }
                   },
                   itemBuilder: (_) => const [
@@ -620,7 +658,8 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                       value: 'del',
                       child: Row(
                         children: [
-                          Icon(Icons.delete, color: Colors.redAccent, size: 16),
+                          Icon(Icons.delete,
+                              color: Colors.redAccent, size: 16),
                           SizedBox(width: 8),
                           Text('Eliminar',
                               style: TextStyle(
@@ -632,7 +671,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
                 ),
             ],
           ),
-                   if (r.comentario.isNotEmpty) ...[
+          if (r.comentario.isNotEmpty) ...[
             const SizedBox(height: 10),
             Text(
               r.comentario,
@@ -643,7 +682,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
             ),
           ],
           const SizedBox(height: 10),
-          // Detalle de puntuaciones
           Wrap(
             spacing: 12,
             runSpacing: 4,
@@ -682,9 +720,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
     return '${fecha.day}/${fecha.month}/${fecha.year}';
   }
 
-  // ══════════════════════════════════════════
-  // BUILD
-  // ══════════════════════════════════════════
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -703,7 +738,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
       ),
       body: Column(
         children: [
-          // Mapa
           Container(
             height: 200,
             width: double.infinity,
@@ -762,7 +796,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
           const SizedBox(height: 12),
 
-          // Categorías
           SizedBox(
             height: 40,
             child: ListView.builder(
@@ -799,7 +832,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
           const SizedBox(height: 10),
 
-          // Título lista
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
@@ -820,7 +852,6 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
           ),
           const SizedBox(height: 8),
 
-          // Lista
           Expanded(
             child: _lugaresFiltrados.isEmpty
                 ? const Center(
@@ -957,16 +988,19 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
         currentIndex: currentIndex,
         onTap: (index) {
           if (index == 0) Navigator.pushReplacementNamed(context, '/menu');
-          if (index == 1) Navigator.pushReplacementNamed(context, '/colectivos');
+          if (index == 1)
+            Navigator.pushReplacementNamed(context, '/colectivos');
           if (index == 2) Navigator.pushReplacementNamed(context, '/eventos');
         },
         selectedFontSize: 11,
         unselectedFontSize: 11,
         elevation: 0,
         items: const [
-          BottomNavigationBarItem(icon: Icon(Icons.home_outlined), label: 'Inicio'),
           BottomNavigationBarItem(
-              icon: Icon(Icons.directions_bus_outlined), label: 'Colectivos'),
+              icon: Icon(Icons.home_outlined), label: 'Inicio'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.directions_bus_outlined),
+              label: 'Colectivos'),
           BottomNavigationBarItem(
               icon: Icon(Icons.calendar_today_outlined), label: 'Eventos'),
           BottomNavigationBarItem(

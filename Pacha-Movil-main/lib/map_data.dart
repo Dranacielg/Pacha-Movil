@@ -29,14 +29,16 @@ class HorarioAtencion {
 // ─── CLASE RESEÑA ───
 class Resena {
   final String usuario;
+  final String usuarioId;   // NUEVO: UID de FirebaseAuth (identificador real)
   final String comentario;
   final double estetica;
   final double atencion;
   final double servicios;
-  final int? fecha; // milisegundos desde epoch; null en reseñas viejas
+  final int? fecha;
 
   Resena({
     required this.usuario,
+    this.usuarioId = '',    // NUEVO (default vacío para datos viejos)
     required this.comentario,
     required this.estetica,
     required this.atencion,
@@ -48,6 +50,7 @@ class Resena {
 
   Map<String, dynamic> toJson() => {
         'usuario': usuario,
+        'usuarioId': usuarioId,   // NUEVO
         'comentario': comentario,
         'estetica': estetica,
         'atencion': atencion,
@@ -57,6 +60,7 @@ class Resena {
 
   factory Resena.fromJson(Map<String, dynamic> json) => Resena(
         usuario: json['usuario'],
+        usuarioId: json['usuarioId'] ?? '',   // NUEVO (retrocompatible)
         comentario: json['comentario'],
         estetica: (json['estetica'] as num).toDouble(),
         atencion: (json['atencion'] as num).toDouble(),
@@ -152,9 +156,6 @@ class RutaColectivo {
   final List<LatLng> paradas;
   final int colorValue;
   final String categoriaRuta;
-
-  /// NUEVO: empresa real (El Urbano, Santa Ana, Xibi-Xibi...)
-  /// Puede quedar vacía en rutas viejas o manuales.
   final String empresa;
 
   RutaColectivo({
