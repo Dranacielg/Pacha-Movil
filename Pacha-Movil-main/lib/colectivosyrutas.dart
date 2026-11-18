@@ -134,7 +134,33 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       debugPrint("Error GPS: $e");
     }
   }
+  /// Valida si el par (i → j) es un viaje válido en esta ruta.
+  ///
+  /// - Sin `indiceRetorno`: ruta lineal, solo se puede avanzar (i < j).
+  /// - Con `indiceRetorno`: se permiten viajes dentro de ida, dentro de vuelta,
+  ///   pero NUNCA cruzando de ida a vuelta ni al revés.
+  bool _parValido(int i, int j, RutaColectivo ruta) {
+    final inicio = ruta.indiceInicio ?? 0;
+    final retorno = ruta.indiceRetorno;
 
+    // Ambos deben estar dentro del rango activo de la ruta
+    if (i < inicio || j < inicio) return false;
+
+    if (retorno == null) {
+      // Ruta lineal: solo sentido del array
+      return i < j;
+    }
+
+    final iEnIda = i <= retorno;
+    final jEnIda = j <= retorno;
+
+    // Ambos en ida: se puede avanzar
+    if (iEnIda && jEnIda) return i < j;
+    // Ambos en vuelta: se puede avanzar
+    if (!iEnIda && !jEnIda) return i < j;
+    // Cruzar ida↔vuelta: imposible
+    return false;
+  }
   void _analizarDestino(LatLng destino) async {
     if (_miUbicacion == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -178,27 +204,26 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       int mejorSubida = -1;
       int mejorBajada = -1;
 
-      for (int i = 0; i < paradas.length; i++) {
-        if (distOrigen[i] > maxCaminataSubida) continue;
-        if (distOrigen[i] >= mejorCosto) continue;
+          for (int i = 0; i < paradas.length; i++) {
+      if (distOrigen[i] > maxCaminataSubida) continue;
+      if (distOrigen[i] >= mejorCosto) continue;
 
-        // 👈 CAMBIO: j desde 0 (no desde i+1) para aceptar cualquier dirección
-        for (int j = 0; j < paradas.length; j++) {
-          if (j == i) continue; // 👈 no puede ser la misma parada
-          if (distDestino[j] > maxCaminataBajada) continue;
+      for (int j = 0; j < paradas.length; j++) {
+        if (j == i) continue;
+        if (distDestino[j] > maxCaminataBajada) continue;
+        if (!_parValido(i, j, ruta)) continue;   // 👈 NUEVO
 
-          // 👈 CAMBIO: usar .abs() para que el costo sea simétrico
-          final saltos = (j - i).abs();
-          final costo =
-              distOrigen[i] + distDestino[j] + saltos * pesoPorParada;
+        final saltos = (j - i).abs();
+        final costo =
+            distOrigen[i] + distDestino[j] + saltos * pesoPorParada;
 
-          if (costo < mejorCosto) {
-            mejorCosto = costo;
-            mejorSubida = i;
-            mejorBajada = j;
-          }
+        if (costo < mejorCosto) {
+          mejorCosto = costo;
+          mejorSubida = i;
+          mejorBajada = j;
         }
       }
+    }
 
       // 3. Si encontramos un par válido, lo agregamos a los resultados
       if (mejorSubida != -1 && mejorBajada != -1) {
@@ -312,8 +337,8 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      'Tocá una línea para ver el recorrido. '
-                      'Podés cambiar de línea sin cerrar esta lista.',
+                      'Tocá una línea para ver su recorrido en el mapa. '
+                      'La lista se minimiza sola; volvé a abrirla con "Ver N líneas".',
                       style: TextStyle(color: Colors.white54, fontSize: 12),
                     ),
                   ),
@@ -391,7 +416,8 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                               _paradaSubida = item['paradaSubida'];
                               _paradaBajada = item['paradaBajada'];
                             });
-                            setSheetState(() {});
+                            // 👇 Cerramos el sheet al seleccionar para que se vea la ruta en el mapa
+                            Navigator.pop(sheetContext);
                           },
                         );
                       },
@@ -469,7 +495,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       body: Column(
         children: [
           Container(
-            height: 250,
+            height: 300,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(16),

@@ -158,6 +158,10 @@ class RutaColectivo {
   final String categoriaRuta;
   final String empresa;
 
+  // 👇 NUEVOS: índices de inicio y retorno dentro del array paradas
+  final int? indiceInicio;   // dónde arranca el recorrido (null = 0)
+  final int? indiceRetorno;  // dónde termina ida / empieza vuelta (null = sin vuelta)
+
   RutaColectivo({
     required this.id,
     required this.nombre,
@@ -166,6 +170,8 @@ class RutaColectivo {
     required this.colorValue,
     required this.categoriaRuta,
     this.empresa = '',
+    this.indiceInicio,
+    this.indiceRetorno,
   });
 
   Color get color => Color(colorValue);
@@ -176,8 +182,14 @@ class RutaColectivo {
         'colorValue': colorValue,
         'categoriaRuta': categoriaRuta,
         'empresa': empresa,
-        'puntosTrazo': puntosTrazo.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
-        'paradas': paradas.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
+        'indiceInicio': indiceInicio,
+        'indiceRetorno': indiceRetorno,
+        'puntosTrazo': puntosTrazo
+            .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+            .toList(),
+        'paradas': paradas
+            .map((p) => {'lat': p.latitude, 'lng': p.longitude})
+            .toList(),
       };
 
   factory RutaColectivo.fromJson(Map<String, dynamic> json) => RutaColectivo(
@@ -186,8 +198,14 @@ class RutaColectivo {
         colorValue: json['colorValue'],
         categoriaRuta: json['categoriaRuta'] ?? 'urbano',
         empresa: json['empresa'] ?? '',
-        puntosTrazo: (json['puntosTrazo'] as List).map((p) => LatLng(p['lat'], p['lng'])).toList(),
-        paradas: (json['paradas'] as List).map((p) => LatLng(p['lat'], p['lng'])).toList(),
+        indiceInicio: (json['indiceInicio'] as num?)?.toInt(),
+        indiceRetorno: (json['indiceRetorno'] as num?)?.toInt(),
+        puntosTrazo: (json['puntosTrazo'] as List)
+            .map((p) => LatLng(p['lat'], p['lng']))
+            .toList(),
+        paradas: (json['paradas'] as List)
+            .map((p) => LatLng(p['lat'], p['lng']))
+            .toList(),
       );
 
   RutaColectivo copyWith({
@@ -198,6 +216,10 @@ class RutaColectivo {
     int? colorValue,
     String? categoriaRuta,
     String? empresa,
+    int? indiceInicio,
+    int? indiceRetorno,
+    bool clearIndiceInicio = false,
+    bool clearIndiceRetorno = false,
   }) {
     return RutaColectivo(
       id: id ?? this.id,
@@ -207,6 +229,12 @@ class RutaColectivo {
       colorValue: colorValue ?? this.colorValue,
       categoriaRuta: categoriaRuta ?? this.categoriaRuta,
       empresa: empresa ?? this.empresa,
+      indiceInicio: clearIndiceInicio
+          ? null
+          : (indiceInicio ?? this.indiceInicio),
+      indiceRetorno: clearIndiceRetorno
+          ? null
+          : (indiceRetorno ?? this.indiceRetorno),
     );
   }
 }

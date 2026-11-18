@@ -318,8 +318,7 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
       }
     }
   }
-
-  @override
+    @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: SafeArea(
@@ -329,54 +328,81 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ═══ HEADER ═══
               Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: const [
-                      Icon(Icons.location_on,
-                          size: 14, color: Color(0xFFFF7F6C)),
-                      SizedBox(width: 4),
-                      Text(
-                        'JUJUY, ARGENTINA',
-                        style: TextStyle(
-                            fontSize: 11,
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Hola,',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Colors.white54,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          '$_nombreUsuario 👋',
+                          style: const TextStyle(
+                            fontSize: 26,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white70),
-                      ),
-                    ],
+                            color: Colors.white,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
-                  Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.tune,
-                            size: 20, color: Colors.white70),
-                        tooltip: 'Editar perfil',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: _mostrarEditarPerfil,
-                      ),
-                      const SizedBox(width: 15),
-                      IconButton(
-                        icon: const Icon(Icons.logout,
-                            size: 20, color: Color(0xFFFF7F6C)),
-                        tooltip: 'Cerrar Sesión',
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(),
-                        onPressed: () async {
-                          await FirebaseAuth.instance.signOut();
-                          if (context.mounted) {
-                            Navigator.pushReplacementNamed(
-                                context, '/login');
-                          }
-                        },
-                      ),
-                    ],
+                  // Botón Salir
+                  TextButton.icon(
+                    onPressed: () async {
+                      await FirebaseAuth.instance.signOut();
+                      if (context.mounted) {
+                        Navigator.pushReplacementNamed(context, '/login');
+                      }
+                    },
+                    icon: const Icon(Icons.logout,
+                        size: 16, color: Color(0xFFFF7F6C)),
+                    label: const Text('Salir',
+                        style: TextStyle(
+                            color: Color(0xFFFF7F6C),
+                            fontSize: 12,
+                            fontWeight: FontWeight.bold)),
+                    style: TextButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      minimumSize: Size.zero,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    ),
                   ),
                 ],
               ),
-              const SizedBox(height: 16),
+              const SizedBox(height: 8),
+
+              // Botón Editar usuario
+              TextButton.icon(
+                onPressed: _mostrarEditarPerfil,
+                icon: const Icon(Icons.edit,
+                    size: 14, color: Colors.white70),
+                label: const Text('Editar usuario',
+                    style: TextStyle(
+                        color: Colors.white70,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500)),
+                style: TextButton.styleFrom(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 10, vertical: 6),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  backgroundColor: const Color(0xFF1E2235),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(height: 20),
+
               const Text(
                 'QUE PA CHA EN JUJUY?',
                 style: TextStyle(
@@ -385,26 +411,7 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
                     fontWeight: FontWeight.w600),
               ),
               const SizedBox(height: 4),
-              GestureDetector(
-                onTap: _mostrarEditarPerfil,
-                child: Row(
-                  children: [
-                    Flexible(
-                      child: Text(
-                        'Hola, $_nombreUsuario 👋',
-                        style: const TextStyle(
-                            fontSize: 26,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.white),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    const Icon(Icons.edit,
-                        size: 18, color: Colors.white38),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 4),
+
               const Text(
                 '¿Qué pinta hacer hoy?',
                 style: TextStyle(fontSize: 14, color: Colors.white60),
@@ -414,7 +421,7 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
               _buildCategoryCard(
                 context,
                 title: 'Colectivos y rutas',
-                subtitle: 'Líneas, y recorridos',
+                subtitle: 'Líneas, recorridos y como llegar a un destino?',
                 imagePath: 'assets/colesyrutas.jpeg',
                 route: '/colectivos',
               ),
@@ -432,22 +439,9 @@ class _MenuPrincipalState extends State<MenuPrincipal> {
               _buildCategoryCard(
                 context,
                 title: 'Lugares Para Conocer',
-                subtitle: 'Cerros, quebradas y miradores',
+                subtitle: 'Cine, Plazas, Compras, Restaurantes, y mas',
                 imagePath: 'assets/lugaresconocer.jpeg',
                 route: '/lugares',
-              ),
-              const SizedBox(height: 20),
-
-              Row(
-                children: const [
-                  Icon(Icons.location_on,
-                      size: 14, color: Color(0xFFFF7F6C)),
-                  SizedBox(width: 6),
-                  Text(
-                    'San Salvador de Jujuy',
-                    style: TextStyle(fontSize: 12, color: Colors.white60),
-                  ),
-                ],
               ),
               const SizedBox(height: 20),
             ],

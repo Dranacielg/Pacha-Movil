@@ -232,17 +232,22 @@ void _confirmarUbicacionPunto(LatLng punto) {
     }
   }
 
-  // ─── Editar Ruta (diálogo existente, se reusa) ───
-  Future<RutaColectivo?> _mostrarEditarRuta(RutaColectivo ruta) async {
+    Future<RutaColectivo?> _mostrarEditarRuta(RutaColectivo ruta) async {
     final nombreCtrl = TextEditingController(text: ruta.nombre);
     final empresaCtrl = TextEditingController(text: ruta.empresa);
     String categoria = ruta.categoriaRuta;
     int colorValue = ruta.colorValue;
 
+    // 👇 NUEVOS: selección de índices. -1 = "auto/sin retorno"
+    int inicioIdx = ruta.indiceInicio ?? -1;
+    int retornoIdx = ruta.indiceRetorno ?? -1;
+
     final colores = <int>[
       0xFFC51414, 0xFFF0F343, 0xFF00C853, 0xFF2979FF,
       0xFF9C27B0, 0xFFFF7F6C, 0xFFFFFFFF,
     ];
+
+    final totalParadas = ruta.paradas.length;
 
     return showDialog<RutaColectivo>(
       context: context,
@@ -311,9 +316,130 @@ void _confirmarUbicacionPunto(LatLng punto) {
                     );
                   }).toList(),
                 ),
+
+                // ═════════════════════════════════════════════
+                // 👇 NUEVA SECCIÓN: RECORRIDO (inicio y retorno)
+                // ═════════════════════════════════════════════
+                const SizedBox(height: 20),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFF161925),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: Colors.white10),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Row(
+                        children: [
+                          Icon(Icons.alt_route,
+                              color: Color(0xFFFF7F6C), size: 18),
+                          SizedBox(width: 6),
+                          Text('Recorrido',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      const Text(
+                        'Marcá qué parada es el inicio y en cuál empieza la vuelta. '
+                        'Si es solo ida, dejá "Sin retorno".',
+                        style: TextStyle(
+                            color: Colors.white54, fontSize: 11),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Dropdown INICIO
+                      DropdownButtonFormField<int>(
+                        value: inicioIdx,
+                        dropdownColor: const Color(0xFF161925),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          labelText: 'Parada de INICIO',
+                          labelStyle: TextStyle(
+                              color: Color(0xFFFF7F6C), fontSize: 12),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: -1,
+                            child: Text('Automático (parada 1)',
+                                style: TextStyle(fontSize: 13)),
+                          ),
+                          ...List.generate(totalParadas, (i) {
+                            final p = ruta.paradas[i];
+                            return DropdownMenuItem(
+                              value: i,
+                              child: Text(
+                                'Parada ${i + 1} · '
+                                '${p.latitude.toStringAsFixed(4)}, '
+                                '${p.longitude.toStringAsFixed(4)}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (v) => setS(() => inicioIdx = v ?? -1),
+                      ),
+                      const SizedBox(height: 12),
+
+                      // Dropdown RETORNO
+                      DropdownButtonFormField<int>(
+                        value: retornoIdx,
+                        dropdownColor: const Color(0xFF161925),
+                        style: const TextStyle(color: Colors.white),
+                        decoration: const InputDecoration(
+                          labelText: 'Parada de RETORNO (fin ida / inicio vuelta)',
+                          labelStyle: TextStyle(
+                              color: Color(0xFFFF7F6C), fontSize: 12),
+                          isDense: true,
+                        ),
+                        items: [
+                          const DropdownMenuItem(
+                            value: -1,
+                            child: Text('Sin retorno (solo ida)',
+                                style: TextStyle(fontSize: 13)),
+                          ),
+                          ...List.generate(totalParadas, (i) {
+                            final p = ruta.paradas[i];
+                            return DropdownMenuItem(
+                              value: i,
+                              child: Text(
+                                'Parada ${i + 1} · '
+                                '${p.latitude.toStringAsFixed(4)}, '
+                                '${p.longitude.toStringAsFixed(4)}',
+                                style: const TextStyle(fontSize: 12),
+                              ),
+                            );
+                          }),
+                        ],
+                        onChanged: (v) => setS(() => retornoIdx = v ?? -1),
+                      ),
+
+                      // Aviso de configuración inválida
+                      if (inicioIdx >= 0 &&
+                          retornoIdx >= 0 &&
+                          inicioIdx >= retornoIdx)
+                        const Padding(
+                          padding: EdgeInsets.only(top: 8),
+                          child: Text(
+                            '⚠️ El inicio debe ser una parada anterior al retorno',
+                            style: TextStyle(
+                                color: Colors.orangeAccent, fontSize: 11),
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // ═════════════════════════════════════════════
+
                 const SizedBox(height: 12),
                 Text(
-                  'Trazo: ${ruta.puntosTrazo.length} pts · Paradas: ${ruta.paradas.length}',
+                  'Trazo: ${ruta.puntosTrazo.length} pts · '
+                  'Paradas: ${ruta.paradas.length}',
                   style: const TextStyle(color: Colors.white38, fontSize: 11),
                 ),
               ],
@@ -327,6 +453,21 @@ void _confirmarUbicacionPunto(LatLng punto) {
               onPressed: () {
                 final n = nombreCtrl.text.trim();
                 if (n.isEmpty) return;
+
+                // Validar índices
+                if (inicioIdx >= 0 &&
+                    retornoIdx >= 0 &&
+                    inicioIdx >= retornoIdx) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                          'El inicio debe ser una parada anterior al retorno'),
+                      backgroundColor: Colors.redAccent,
+                    ),
+                  );
+                  return;
+                }
+
                 Navigator.pop(
                   ctx,
                   ruta.copyWith(
@@ -334,6 +475,10 @@ void _confirmarUbicacionPunto(LatLng punto) {
                     empresa: empresaCtrl.text.trim(),
                     categoriaRuta: categoria,
                     colorValue: colorValue,
+                    indiceInicio: inicioIdx < 0 ? null : inicioIdx,
+                    indiceRetorno: retornoIdx < 0 ? null : retornoIdx,
+                    clearIndiceInicio: inicioIdx < 0,
+                    clearIndiceRetorno: retornoIdx < 0,
                   ),
                 );
               },

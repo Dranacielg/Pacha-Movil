@@ -312,7 +312,7 @@ class _EventosScreenState extends State<EventosScreen> {
 
   Widget _buildMiniMapa() {
     return Container(
-      height: 200,
+      height: 250,
       width: double.infinity,
       margin: const EdgeInsets.symmetric(horizontal: 16),
       decoration: BoxDecoration(

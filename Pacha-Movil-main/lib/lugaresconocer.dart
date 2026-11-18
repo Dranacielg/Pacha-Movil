@@ -266,8 +266,8 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
       backgroundColor: Colors.transparent,
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setSheetState) => DraggableScrollableSheet(
-          initialChildSize: 0.75,
-          minChildSize: 0.5,
+          initialChildSize: 0.5,
+          minChildSize: 0.35,
           maxChildSize: 0.95,
           expand: false,
           builder: (ctx, scrollCtrl) => Container(
@@ -314,8 +314,23 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
             ),
           ),
         ),
-        const SizedBox(height: 16),
-
+        const SizedBox(height: 6),
+            const Center(
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.keyboard_arrow_up, size: 12, color: Colors.white38),
+                  SizedBox(width: 4),
+                  Text(
+                    'Deslizá arriba para ampliar · abajo para achicar',
+                    style: TextStyle(color: Colors.white38, fontSize: 10),
+                  ),
+                  SizedBox(width: 4),
+                  Icon(Icons.keyboard_arrow_down, size: 12, color: Colors.white38),
+                ],
+              ),
+            ),
+            const SizedBox(height: 12),
         Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -739,7 +754,7 @@ class _LugaresConocerScreenState extends State<LugaresConocerScreen> {
       body: Column(
         children: [
           Container(
-            height: 200,
+            height: 250,
             width: double.infinity,
             margin: const EdgeInsets.symmetric(horizontal: 16),
             decoration: BoxDecoration(
