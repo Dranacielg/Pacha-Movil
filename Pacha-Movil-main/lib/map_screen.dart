@@ -24,17 +24,17 @@ class _MapScreenState extends State<MapScreen> {
   StreamSubscription? _subPuntos;
   StreamSubscription? _subRutas;
 
-  bool _mostrarRutas = true;
-  bool _mostrarLugares = true;
-  bool _mostrarEventos = true;
+bool _mostrarRutas = false;      // 👈 antes true
+bool _mostrarLugares = false;    // 👈 antes true
+bool _mostrarEventos = false;    // 👈 antes true
 
-  // Modos
-  bool _modoAgregarPunto = false;
-  bool _modoAgregarRuta = false;
-  String? _categoriaForzada; // 'evento' | 'lugar' | null
+// Modos
+bool _modoAgregarPunto = false;
+bool _modoAgregarRuta = false;
+String? _categoriaForzada;
 
-  // Panel
-  bool _panelAbierto = true;
+// Panel
+bool _panelAbierto = false;      // 👈 antes true
   bool _panelExpandido = false;
   int _tabActual = 0; // 0=Eventos, 1=Lugares, 2=Rutas
 
@@ -1165,19 +1165,19 @@ void _confirmarUbicacionPunto(LatLng punto) {
   // ══════════════════════════════════════════
   // BUILD
   // ══════════════════════════════════════════
-  @override
+   @override
   Widget build(BuildContext context) {
-final h = MediaQuery.of(context).size.height;
-final double panelHeight;
-if (_modoAgregarRuta) {
-  panelHeight = h * 0.38;
-} else if (_modoAgregarPunto) {
-  panelHeight = h * 0.32;
-} else if (!_panelAbierto) {
-  panelHeight = 0;
-} else {
-  panelHeight = h * 0.45; // siempre 45%, sin expansión
-}
+    final h = MediaQuery.of(context).size.height;
+    final double panelHeight;
+    if (_modoAgregarRuta) {
+      panelHeight = h * 0.38;
+    } else if (_modoAgregarPunto) {
+      panelHeight = h * 0.32;
+    } else if (!_panelAbierto) {
+      panelHeight = 0;
+    } else {
+      panelHeight = h * 0.45; // siempre 45%, sin expansión
+    }
 
     return Scaffold(
       extendBodyBehindAppBar: true,
@@ -1188,15 +1188,47 @@ if (_modoAgregarRuta) {
         elevation: 0,
         foregroundColor: Colors.white,
         actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white70),
-            tooltip: 'Cerrar Sesión',
-            onPressed: () async {
-              await FirebaseAuth.instance.signOut();
-              if (context.mounted) {
-                Navigator.pushReplacementNamed(context, '/login');
-              }
-            },
+          Padding(
+            padding: const EdgeInsets.only(right: 10),
+            child: Center(
+              child: Material(
+                color: const Color(0xFF1E2235).withOpacity(0.95),
+                borderRadius: BorderRadius.circular(20),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(20),
+                  onTap: () async {
+                    await FirebaseAuth.instance.signOut();
+                    if (context.mounted) {
+                      Navigator.pushReplacementNamed(context, '/login');
+                    }
+                  },
+                  child: Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                          color: const Color(0xFFFF7F6C), width: 1),
+                    ),
+                    child: const Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.logout,
+                            color: Color(0xFFFF7F6C), size: 16),
+                        SizedBox(width: 6),
+                        Text(
+                          'Salir',
+                          style: TextStyle(
+                              color: Color(0xFFFF7F6C),
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
           ),
         ],
       ),
@@ -1230,118 +1262,120 @@ if (_modoAgregarRuta) {
               child: Row(
                 children: [
                   _chip('Rutas', _mostrarRutas,
-                      (v) => setState(() => _mostrarRutas = v)),
+                      (v) => setState(() => _mostrarRutas = v), Colors.amber),
                   const SizedBox(width: 8),
                   _chip('Lugares', _mostrarLugares,
-                      (v) => setState(() => _mostrarLugares = v)),
+                      (v) => setState(() => _mostrarLugares = v),
+                      Colors.blueAccent),
                   const SizedBox(width: 8),
                   _chip('Eventos', _mostrarEventos,
-                      (v) => setState(() => _mostrarEventos = v)),
+                      (v) => setState(() => _mostrarEventos = v),
+                      Colors.pinkAccent),
                 ],
               ),
             ),
           ),
 
           // ═══ CROSSHAIR (mira) — para agregar punto O trazar ruta ═══
-if (_modoAgregarRuta || _modoAgregarPunto)
-  Positioned.fill(
-    child: IgnorePointer(
-      child: Stack(
-        children: [
-          // El + está EXACTAMENTE en el centro del mapa
-          const Center(
-            child: Icon(
-              Icons.add,
-              size: 44,
-              color: Colors.blueAccent,
-              shadows: [
-                Shadow(color: Colors.black45, blurRadius: 6),
-                Shadow(color: Colors.white, blurRadius: 2),
-              ],
-            ),
-          ),
-          // El texto va DEBAJO del +, no lo empuja
-          Align(
-            alignment: const Alignment(0, 0.15),
-            child: Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(6),
+          if (_modoAgregarRuta || _modoAgregarPunto)
+            Positioned.fill(
+              child: IgnorePointer(
+                child: Stack(
+                  children: [
+                    // El + está EXACTAMENTE en el centro del mapa
+                    const Center(
+                      child: Icon(
+                        Icons.add,
+                        size: 44,
+                        color: Colors.blueAccent,
+                        shadows: [
+                          Shadow(color: Colors.black45, blurRadius: 6),
+                          Shadow(color: Colors.white, blurRadius: 2),
+                        ],
+                      ),
+                    ),
+                    // El texto va DEBAJO del +, no lo empuja
+                    Align(
+                      alignment: const Alignment(0, 0.15),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 5),
+                        decoration: BoxDecoration(
+                          color: Colors.white,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          _modoAgregarRuta
+                              ? 'Apunta y confirma'
+                              : 'Ubicá el ${_categoriaForzada ?? "punto"}',
+                          style: const TextStyle(
+                              color: Colors.black,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
-              child: Text(
-                _modoAgregarRuta
-                    ? 'Apunta y confirma'
-                    : 'Ubicá el ${_categoriaForzada ?? "punto"}',
-                style: const TextStyle(
-                    color: Colors.black,
-                    fontSize: 11,
-                    fontWeight: FontWeight.bold),
-              ),
             ),
-          ),
-        ],
-      ),
-    ),
-  ),
 
           // ═══ FAB Mi Ubicación ═══
-Positioned(
-  right: 16,
-  bottom: _panelAbierto ? panelHeight + 16 : 70,
-  child: FloatingActionButton(
-    heroTag: 'mi_ubicacion',
-    backgroundColor: const Color(0xFF161925),
-    foregroundColor: const Color(0xFFFF7F6C),
-    onPressed: () => _mapKey.currentState?.centrarEnMiUbicacion(),
-    child: const Icon(Icons.my_location),
-  ),
-),
+          Positioned(
+            right: 16,
+            bottom: _panelAbierto ? panelHeight + 16 : 70,
+            child: FloatingActionButton(
+              heroTag: 'mi_ubicacion',
+              backgroundColor: const Color(0xFF161925),
+              foregroundColor: const Color(0xFFFF7F6C),
+              onPressed: () => _mapKey.currentState?.centrarEnMiUbicacion(),
+              child: const Icon(Icons.my_location),
+            ),
+          ),
 
           // ═══ MINI-BARRA para reabrir el panel ═══
-if (!_panelAbierto && !_modoAgregarRuta && !_modoAgregarPunto)
-  Positioned(
-    bottom: 0,
-    left: 0,
-    right: 0,
-    child: GestureDetector(
-      onTap: () => setState(() => _panelAbierto = true),
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 10),
-        decoration: const BoxDecoration(
-          color: Color(0xFF161925),
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-          boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 12)],
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 5,
-              decoration: BoxDecoration(
-                color: Colors.white24,
-                borderRadius: BorderRadius.circular(10),
+          if (!_panelAbierto && !_modoAgregarRuta && !_modoAgregarPunto)
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: GestureDetector(
+                onTap: () => setState(() => _panelAbierto = true),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF161925),
+                    borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                    boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 12)],
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 5,
+                        decoration: BoxDecoration(
+                          color: Colors.white24,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.keyboard_arrow_up,
+                              color: Colors.white54, size: 18),
+                          SizedBox(width: 4),
+                          Text('Abrir panel',
+                              style: TextStyle(
+                                  color: Colors.white54, fontSize: 12)),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
               ),
             ),
-            const SizedBox(height: 6),
-            const Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.keyboard_arrow_up,
-                    color: Colors.white54, size: 18),
-                SizedBox(width: 4),
-                Text('Abrir panel',
-                    style: TextStyle(
-                        color: Colors.white54, fontSize: 12)),
-              ],
-            ),
-          ],
-        ),
-      ),
-    ),
-  ),
 
           // ═══ PANEL INFERIOR ═══
           if (panelHeight > 0)
@@ -1354,17 +1388,14 @@ if (!_panelAbierto && !_modoAgregarRuta && !_modoAgregarPunto)
                 duration: const Duration(milliseconds: 200),
                 decoration: const BoxDecoration(
                   color: Color(0xFF161925),
-                  borderRadius:
-                      BorderRadius.vertical(top: Radius.circular(20)),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black54, blurRadius: 12)
-                  ],
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                  boxShadow: [BoxShadow(color: Colors.black54, blurRadius: 12)],
                 ),
                 child: _modoAgregarRuta
-    ? _buildPanelTrazarRuta()
-    : _modoAgregarPunto
-        ? _buildPanelAgregarPunto()
-        : _buildPanelTabs(),
+                    ? _buildPanelTrazarRuta()
+                    : _modoAgregarPunto
+                        ? _buildPanelAgregarPunto()
+                        : _buildPanelTabs(),
               ),
             ),
         ],
@@ -1846,22 +1877,27 @@ Widget _buildPanelAgregarPunto() {
   }
 
   // ─── Chip arriba ───
-  Widget _chip(String label, bool value, Function(bool) onChanged) {
-    return FilterChip(
-      label: Text(label,
-          style: TextStyle(
-              color: value ? Colors.black : Colors.white70,
-              fontSize: 12,
-              fontWeight: FontWeight.bold)),
-      selected: value,
-      selectedColor: const Color(0xFFFF7F6C),
-      backgroundColor: const Color(0xFF161925).withOpacity(0.9),
-      checkmarkColor: Colors.black,
-      onSelected: onChanged,
-      elevation: 3,
-      shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-          side: const BorderSide(color: Colors.white24)),
-    );
-  }
+  Widget _chip(
+  String label,
+  bool value,
+  Function(bool) onChanged,
+  Color activeColor,
+) {
+  return FilterChip(
+    label: Text(label,
+        style: TextStyle(
+            color: value ? Colors.black : Colors.white70,
+            fontSize: 12,
+            fontWeight: FontWeight.bold)),
+    selected: value,
+    selectedColor: activeColor,
+    backgroundColor: const Color(0xFF161925).withOpacity(0.9),
+    checkmarkColor: Colors.black,
+    onSelected: onChanged,
+    elevation: 3,
+    shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: const BorderSide(color: Colors.white24)),
+  );
+}
 }
