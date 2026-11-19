@@ -42,7 +42,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
   bool _modoMira = false;
   List<Map<String, dynamic>> _resultadosRutas = [];
 
-  // 👈 NUEVO: Completer para esperar a que Firestore emita las rutas
   final Completer<void> _rutasListas = Completer<void>();
 
   @override
@@ -56,7 +55,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     _subPuntos = _storage.streamPuntos().listen((data) {
       if (mounted) setState(() => _puntos = data);
     });
-    // 👈 CAMBIO: completar el Completer al llegar la primera emisión
     _subRutas = _storage.streamRutas().listen(
       (data) {
         if (!mounted) return;
@@ -96,7 +94,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       );
     }
 
-    // 👈 NUEVO: esperar a que el stream de rutas emita (máx 6s)
     await _rutasListas.future.timeout(
       const Duration(seconds: 6),
       onTimeout: () {
@@ -105,7 +102,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     );
     if (!mounted) return;
 
-    // Pequeño delay para que la UI se renderice antes del modal
     await Future.delayed(const Duration(milliseconds: 100));
     if (!mounted) return;
     _analizarDestino(widget.destinoInicial!);
@@ -134,33 +130,25 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       debugPrint("Error GPS: $e");
     }
   }
-  /// Valida si el par (i → j) es un viaje válido en esta ruta.
-  ///
-  /// - Sin `indiceRetorno`: ruta lineal, solo se puede avanzar (i < j).
-  /// - Con `indiceRetorno`: se permiten viajes dentro de ida, dentro de vuelta,
-  ///   pero NUNCA cruzando de ida a vuelta ni al revés.
+
   bool _parValido(int i, int j, RutaColectivo ruta) {
     final inicio = ruta.indiceInicio ?? 0;
     final retorno = ruta.indiceRetorno;
 
-    // Ambos deben estar dentro del rango activo de la ruta
     if (i < inicio || j < inicio) return false;
 
     if (retorno == null) {
-      // Ruta lineal: solo sentido del array
       return i < j;
     }
 
     final iEnIda = i <= retorno;
     final jEnIda = j <= retorno;
 
-    // Ambos en ida: se puede avanzar
     if (iEnIda && jEnIda) return i < j;
-    // Ambos en vuelta: se puede avanzar
     if (!iEnIda && !jEnIda) return i < j;
-    // Cruzar ida↔vuelta: imposible
     return false;
   }
+
   void _analizarDestino(LatLng destino) async {
     if (_miUbicacion == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -181,7 +169,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     const Distance dist = Distance();
     List<Map<String, dynamic>> resultados = [];
 
-    // Parámetros
     const double maxCaminataSubida = 700;
     const double maxCaminataBajada = 500;
     const double pesoPorParada = 15;
@@ -190,7 +177,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       final paradas = ruta.paradas;
       if (paradas.length < 2) continue;
 
-      // 1. Precalcular distancia al origen y al destino para cada parada
       final distOrigen = List<double>.filled(paradas.length, double.infinity);
       final distDestino = List<double>.filled(paradas.length, double.infinity);
 
@@ -199,33 +185,31 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
         distDestino[i] = dist.as(LengthUnit.Meter, paradas[i], destino);
       }
 
-      // 2. Buscar el mejor par por costo total
       double mejorCosto = double.infinity;
       int mejorSubida = -1;
       int mejorBajada = -1;
 
-          for (int i = 0; i < paradas.length; i++) {
-      if (distOrigen[i] > maxCaminataSubida) continue;
-      if (distOrigen[i] >= mejorCosto) continue;
+      for (int i = 0; i < paradas.length; i++) {
+        if (distOrigen[i] > maxCaminataSubida) continue;
+        if (distOrigen[i] >= mejorCosto) continue;
 
-      for (int j = 0; j < paradas.length; j++) {
-        if (j == i) continue;
-        if (distDestino[j] > maxCaminataBajada) continue;
-        if (!_parValido(i, j, ruta)) continue;   // 👈 NUEVO
+        for (int j = 0; j < paradas.length; j++) {
+          if (j == i) continue;
+          if (distDestino[j] > maxCaminataBajada) continue;
+          if (!_parValido(i, j, ruta)) continue;
 
-        final saltos = (j - i).abs();
-        final costo =
-            distOrigen[i] + distDestino[j] + saltos * pesoPorParada;
+          final saltos = (j - i).abs();
+          final costo =
+              distOrigen[i] + distDestino[j] + saltos * pesoPorParada;
 
-        if (costo < mejorCosto) {
-          mejorCosto = costo;
-          mejorSubida = i;
-          mejorBajada = j;
+          if (costo < mejorCosto) {
+            mejorCosto = costo;
+            mejorSubida = i;
+            mejorBajada = j;
+          }
         }
       }
-    }
 
-      // 3. Si encontramos un par válido, lo agregamos a los resultados
       if (mejorSubida != -1 && mejorBajada != -1) {
         final paradaSubida = paradas[mejorSubida];
         final paradaBajada = paradas[mejorBajada];
@@ -236,9 +220,7 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
           'distanciaSubida': distOrigen[mejorSubida],
           'paradaBajada': paradaBajada,
           'distanciaBajada': distDestino[mejorBajada],
-          // 👈 CAMBIO: .abs() acá también
           'paradasRecorrido': (mejorBajada - mejorSubida).abs(),
-          // 👈 CAMBIO: sentido correcto según dirección real del viaje
           'sentido': mejorBajada > mejorSubida
               ? 'Hacia el final de la línea'
               : 'Hacia el inicio de la línea',
@@ -250,7 +232,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
       }
     }
 
-    // 4. Ordenar por costo total
     resultados.sort((a, b) {
       final costA = (a['distanciaSubida'] as double) +
           (a['distanciaBajada'] as double) +
@@ -416,7 +397,6 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                               _paradaSubida = item['paradaSubida'];
                               _paradaBajada = item['paradaBajada'];
                             });
-                            // 👇 Cerramos el sheet al seleccionar para que se vea la ruta en el mapa
                             Navigator.pop(sheetContext);
                           },
                         );
@@ -444,7 +424,31 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
     });
   }
 
-  /// Ordena "Línea 1" < "Línea 2" < "Línea 10" < "Línea 42" < "Línea 100".
+  // 👇 NUEVO: botón circular que mueve la cámara a una parada concreta
+  Widget _botonZoomParada({
+    required IconData icon,
+    required Color color,
+    required String tooltip,
+    required LatLng parada,
+  }) {
+    return Material(
+      color: const Color(0xFF1E2235),
+      borderRadius: BorderRadius.circular(20),
+      elevation: 4,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(20),
+        onTap: () => _mapKey.currentState?.moverCamara(parada, 16.5),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+          child: Tooltip(
+            message: tooltip,
+            child: Icon(icon, color: color, size: 20),
+          ),
+        ),
+      ),
+    );
+  }
+
   static int _compararNatural(String a, String b) {
     final regex = RegExp(r'(\d+)|(\D+)');
     final partesA =
@@ -576,7 +580,8 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                         ),
                       ),
                     ),
-                  // ✅ Botón "Ver N líneas"
+
+                  // 👇 NUEVO: "Ver N líneas" + botones de zoom a subida/bajada
                   if (!_modoMira &&
                       _destinoTocado != null &&
                       _resultadosRutas.isNotEmpty)
@@ -585,24 +590,51 @@ class _ColectivosY_RutasState extends State<ColectivosY_Rutas> {
                       left: 0,
                       right: 0,
                       child: Center(
-                        child: ElevatedButton.icon(
-                          onPressed: () =>
-                              _mostrarPanelResultados(_resultadosRutas),
-                          icon: const Icon(Icons.list, size: 18),
-                          label: Text(
-                            'Ver ${_resultadosRutas.length} '
-                            'línea${_resultadosRutas.length == 1 ? "" : "s"}',
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF1E2235),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(20)),
-                            elevation: 4,
-                          ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            // Lista de líneas disponibles
+                            ElevatedButton.icon(
+                              onPressed: () =>
+                                  _mostrarPanelResultados(_resultadosRutas),
+                              icon: const Icon(Icons.list, size: 18),
+                              label: Text(
+                                'Ver ${_resultadosRutas.length} '
+                                'línea${_resultadosRutas.length == 1 ? "" : "s"}',
+                              ),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF1E2235),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(20)),
+                                elevation: 4,
+                              ),
+                            ),
+                            // Solo si hay una línea elegida:
+                            // zoom a la parada de subida y a la de bajada
+                            if (_rutaSeleccionada != null &&
+                                _paradaSubida != null &&
+                                _paradaBajada != null) ...[
+                              const SizedBox(width: 8),
+                              _botonZoomParada(
+                                icon: Icons.directions_walk,
+                                color: Colors.greenAccent,
+                                tooltip: 'Ir a la parada de subida',
+                                parada: _paradaSubida!,
+                              ),
+                              const SizedBox(width: 8),
+                              _botonZoomParada(
+                                icon: Icons.flag,
+                                color: Colors.orangeAccent,
+                                tooltip: 'Ir a la parada de bajada',
+                                parada: _paradaBajada!,
+                              ),
+                            ],
+                          ],
                         ),
                       ),
                     ),
+
                   if (_modoMira)
                     Positioned(
                       bottom: 16,
